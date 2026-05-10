@@ -71,7 +71,7 @@ app.add_middleware(
 
 # Trusted Host (production)
 if settings.is_production:
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*.medclaim.ai", "medclaim.ai"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*.aetheraonline.com", "aetheraonline.com", "*.medclaim.ai", "medclaim.ai", "localhost"])
 
 # Tenant Isolation (multi-tenant data scoping)
 app.add_middleware(TenantMiddleware)

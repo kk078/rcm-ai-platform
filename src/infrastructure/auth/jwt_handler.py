@@ -8,7 +8,7 @@ for blacklist tracking on logout.
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-import jwt
+from jose import jwt
 import structlog
 
 from src.config import get_settings

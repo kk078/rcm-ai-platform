@@ -2,7 +2,7 @@
 """Create the default admin user for MedClaim AI."""
 
 import asyncio
-import sys
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from src.infrastructure.database.session import async_session
@@ -27,6 +27,7 @@ async def create_admin() -> None:
             return
 
         # Create admin user
+        now = datetime.now(timezone.utc).replace(tzinfo=None)  # naive UTC for PG TIMESTAMP columns
         admin = User(
             email=ADMIN_EMAIL,
             password_hash=auth_service.hash_password(ADMIN_PASSWORD),
@@ -36,6 +37,9 @@ async def create_admin() -> None:
             internal_role="company_admin",
             is_active=True,
             mfa_enabled=False,
+            password_changed_at=now,
+            created_at=now,
+            updated_at=now,
         )
 
         session.add(admin)
