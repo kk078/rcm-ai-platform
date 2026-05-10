@@ -3,7 +3,6 @@
 
 import secrets
 import base64
-import shutil
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -31,17 +30,21 @@ def create_env_prod(secrets: dict[str, str]) -> None:
         print(f"ERROR: {example_path} not found")
         return
 
-    # Copy .env.example as base
     content = example_path.read_text(encoding="utf-8")
 
     # Replace secret placeholders with generated values
     content = content.replace("CHANGE_ME_TO_RANDOM_64_CHAR_STRING", secrets["APP_SECRET_KEY"])
     content = content.replace("CHANGE_ME_ANOTHER_RANDOM_STRING", secrets["JWT_SECRET_KEY"])
-    content = content.replace("CHANGE_ME_32_BYTE_BASE64_KEY", secrets["PHI_ENCRYPTION_KEY"])
-
-    # The second CHANGE_ME for FIELD_ENCRYPTION_KEY — handle separately
-    # Since both PHI and FIELD keys have same placeholder text, we already replaced
-    # the first occurrence. Need to handle the second one.
+    # Handle both encryption key placeholders (PHI first, then FIELD)
+    content = content.replace(
+        "CHANGE_ME_32_BYTE_BASE64_KEY   # AES-256 key for PHI fields",
+        secrets["PHI_ENCRYPTION_KEY"] + "   # AES-256 key for PHI fields",
+    )
+    content = content.replace(
+        "CHANGE_ME_32_BYTE_BASE64_KEY  # Separate key for field-level encryption",
+        secrets["FIELD_ENCRYPTION_KEY"] + "  # Separate key for field-level encryption",
+    )
+    # Fallback in case the exact comments don't match
     if "CHANGE_ME_32_BYTE_BASE64_KEY" in content:
         content = content.replace("CHANGE_ME_32_BYTE_BASE64_KEY", secrets["FIELD_ENCRYPTION_KEY"])
 
@@ -50,7 +53,6 @@ def create_env_prod(secrets: dict[str, str]) -> None:
     new_lines = []
     for line in lines:
         stripped = line.strip()
-        # Override specific settings for production
         if stripped.startswith("APP_ENV="):
             new_lines.append("APP_ENV=production")
         elif stripped.startswith("APP_DEBUG="):
@@ -77,14 +79,20 @@ def create_env_prod(secrets: dict[str, str]) -> None:
             new_lines.append("S3_ACCESS_KEY=medclaim_minio")
         elif stripped.startswith("S3_SECRET_KEY="):
             new_lines.append(f"S3_SECRET_KEY={secrets['MINIO_PASSWORD']}")
-        elif stripped.startswith("ANTHROPIC_API_KEY="):
-            new_lines.append("ANTHROPIC_API_KEY=")
         else:
             new_lines.append(line)
 
-    # Append tunnel token placeholder
+    # Append Ollama and tunnel config
     new_lines.append("")
-    new_lines.append("# Cloudflare Tunnel — fill in from https://one.dash.cloudflare.com")
+    new_lines.append("# ── Ollama Cloud API ────────────────────────────────────────")
+    new_lines.append("# Get your API key from https://ollama.com → account settings → API keys")
+    new_lines.append("OLLAMA_API_KEY=")
+    new_lines.append("OLLAMA_MODEL=qwen3-coder:480b-cloud")
+    new_lines.append("OLLAMA_FALLBACK_MODEL=deepseek-v3.1:671-cloud")
+    new_lines.append("OLLAMA_TEMPERATURE=0.1")
+    new_lines.append("")
+    new_lines.append("# ── Cloudflare Tunnel ────────────────────────────────────────")
+    new_lines.append("# Get from Cloudflare Zero Trust → Networks → Tunnels")
     new_lines.append("TUNNEL_TOKEN=")
 
     content = "\n".join(new_lines)
@@ -110,7 +118,7 @@ def main() -> None:
 
     print()
     print("IMPORTANT: Edit .env.prod and fill in:")
-    print("  1. ANTHROPIC_API_KEY — your Anthropic API key")
+    print("  1. OLLAMA_API_KEY — your Ollama Cloud API key from https://ollama.com")
     print("  2. TUNNEL_TOKEN — from Cloudflare Tunnel dashboard")
     print()
 

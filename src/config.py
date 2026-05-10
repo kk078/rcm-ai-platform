@@ -9,7 +9,7 @@ from pydantic import Field
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     # ── App ──────────────────────────────────────────────────
     app_name: str = "medclaim-ai"
@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://medclaim:password@localhost:5432/medclaim_db"
     database_pool_size: int = 20
     database_max_overflow: int = 10
+    database_echo: bool = False
 
     # ── Redis ────────────────────────────────────────────────
     redis_url: str = "redis://localhost:6379/0"
@@ -33,20 +34,27 @@ class Settings(BaseSettings):
     # ── Celery ───────────────────────────────────────────────
     celery_broker_url: str = "redis://localhost:6379/2"
     celery_result_backend: str = "redis://localhost:6379/2"
+    celery_task_always_eager: bool = False
 
     # ── Vector DB ────────────────────────────────────────────
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
+    qdrant_collection_coding_guidelines: str = "icd10_guidelines"
+    qdrant_collection_payer_policies: str = "payer_policies"
+    qdrant_collection_appeal_templates: str = "appeal_templates"
 
-    # ── AI / LLM ─────────────────────────────────────────────
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
-    anthropic_max_tokens: int = 4096
-    anthropic_temperature: float = 0.1
+    # ── AI / LLM (Ollama Cloud) ──────────────────────────────
+    ollama_api_key: str = ""
+    ollama_model: str = "qwen3-coder:480b-cloud"
+    ollama_fallback_model: str = "deepseek-v3.1:671-cloud"
+    ollama_temperature: float = 0.1
 
     # ── Embeddings ───────────────────────────────────────────
     embedding_provider: str = "voyageai"
     voyageai_api_key: str = ""
+    voyageai_model: str = "voyage-large-2"
+    openai_api_key: str = ""
+    embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1024
 
     # ── S3 / Object Storage ──────────────────────────────────
@@ -56,6 +64,8 @@ class Settings(BaseSettings):
     s3_bucket_documents: str = "medclaim-documents"
     s3_bucket_era_files: str = "medclaim-era-files"
     s3_bucket_appeals: str = "medclaim-appeals"
+    s3_bucket_audit_archive: str = "medclaim-audit-archive"
+    s3_encryption: str = "AES256"
     s3_region: str = "us-east-1"
 
     # ── Auth ─────────────────────────────────────────────────
@@ -63,6 +73,8 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 7
     jwt_algorithm: str = "HS256"
+    mfa_issuer: str = "MedClaim AI"
+    password_min_length: int = 12
     max_login_attempts: int = 5
     lockout_duration_minutes: int = 30
 
@@ -70,11 +82,17 @@ class Settings(BaseSettings):
     clearinghouse_provider: str = "availity"
     clearinghouse_api_url: str = ""
     clearinghouse_api_key: str = ""
+    clearinghouse_sender_id: str = ""
+    clearinghouse_receiver_id: str = ""
+    edi_interchange_sender_id: str = ""
+    edi_interchange_receiver_id: str = ""
 
     # ── FHIR ─────────────────────────────────────────────────
     fhir_server_url: str = ""
     fhir_client_id: str = ""
     fhir_client_secret: str = ""
+    fhir_auth_type: str = "oauth2"
+    fhir_scope: str = "patient/*.read encounter/*.read"
 
     # ── Encryption ───────────────────────────────────────────
     phi_encryption_key: str = "CHANGE_ME"
@@ -87,8 +105,17 @@ class Settings(BaseSettings):
 
     # ── Monitoring ───────────────────────────────────────────
     sentry_dsn: str = ""
+    prometheus_enabled: bool = True
     log_level: str = "INFO"
     log_format: str = "json"
+
+    # ── Rate Limiting ────────────────────────────────────────
+    rate_limit_default: str = "100/minute"
+    rate_limit_ai_endpoints: str = "30/minute"
+    rate_limit_bulk_operations: str = "10/minute"
+
+    # ── Cloudflare Tunnel ────────────────────────────────────
+    tunnel_token: str = ""
 
     @property
     def is_production(self) -> bool:

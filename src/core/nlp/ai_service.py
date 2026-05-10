@@ -1,14 +1,15 @@
 """
-AI Service — Claude API integration with RAG pipeline.
+AI Service — Ollama Cloud API integration with RAG pipeline.
 Handles all LLM interactions with PHI redaction, prompt management,
 token tracking, and structured output parsing.
 """
 
-import anthropic
+import json
 import structlog
 import time
-import json
 from typing import Any
+
+from ollama import Client
 from pydantic import BaseModel, Field
 from uuid import UUID, uuid4
 
@@ -67,20 +68,24 @@ class AIClaimScrubInsight(BaseModel):
 
 class AIService:
     """
-    Central AI service managing all Claude API interactions.
+    Central AI service managing all Ollama Cloud API interactions.
     Implements RAG pattern with vector store retrieval.
+    Falls back to secondary model if primary fails.
     """
 
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        self.model = settings.anthropic_model
-        self.max_tokens = settings.anthropic_max_tokens
-        self.temperature = settings.anthropic_temperature
+        self.client = Client(
+            host="https://ollama.com",
+            headers={"Authorization": f"Bearer {settings.ollama_api_key}"},
+        )
+        self.model = settings.ollama_model
+        self.fallback_model = settings.ollama_fallback_model
+        self.temperature = settings.ollama_temperature
         self.redactor = PHIRedactor()
         self.vector_store = VectorStoreService()
         self.prompts = PromptTemplates()
 
-    async def _call_claude(
+    async def _call_llm(
         self,
         system_prompt: str,
         user_message: str,
@@ -88,46 +93,65 @@ class AIService:
         max_tokens: int | None = None,
     ) -> str:
         """
-        Make a Claude API call with PHI redaction, token tracking, and error handling.
+        Make an Ollama Cloud API call with PHI redaction and error handling.
+        Falls back to secondary model if primary fails.
         """
         request_id = str(uuid4())
         start_time = time.time()
 
         # Redact PHI before sending to API
+        redaction_map = {}
         if settings.phi_redaction_enabled:
             user_message, redaction_map = self.redactor.redact(user_message)
 
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens or self.max_tokens,
-                temperature=temperature or self.temperature,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_message}],
-            )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
 
-            result_text = response.content[0].text
-            duration_ms = round((time.time() - start_time) * 1000, 2)
+        options = {"temperature": temperature or self.temperature}
+        if max_tokens:
+            options["num_predict"] = max_tokens
 
-            # Log usage (no PHI in logs)
-            logger.info(
-                "ai_api_call",
-                request_id=request_id,
-                model=self.model,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-                duration_ms=duration_ms,
-            )
+        for attempt_model in [self.model, self.fallback_model]:
+            try:
+                response = self.client.chat(
+                    model=attempt_model,
+                    messages=messages,
+                    options=options,
+                )
 
-            # Re-hydrate PHI in response if redacted
-            if settings.phi_redaction_enabled:
-                result_text = self.redactor.rehydrate(result_text, redaction_map)
+                result_text = response["message"]["content"]
+                duration_ms = round((time.time() - start_time) * 1000, 2)
 
-            return result_text
+                # Estimate token usage (Ollama doesn't return exact counts)
+                estimated_input = len(system_prompt.split()) + len(user_message.split())
+                estimated_output = len(result_text.split())
 
-        except anthropic.APIError as e:
-            logger.error("ai_api_error", request_id=request_id, error=str(e))
-            raise
+                logger.info(
+                    "ai_api_call",
+                    request_id=request_id,
+                    model=attempt_model,
+                    input_tokens=estimated_input,
+                    output_tokens=estimated_output,
+                    duration_ms=duration_ms,
+                )
+
+                # Re-hydrate PHI in response if redacted
+                if settings.phi_redaction_enabled:
+                    result_text = self.redactor.rehydrate(result_text, redaction_map)
+
+                return result_text
+
+            except Exception as e:
+                if attempt_model == self.model:
+                    logger.warning("ai_primary_model_failed", request_id=request_id, error=str(e), fallback=True)
+                    continue
+                logger.error("ai_api_error", request_id=request_id, error=str(e))
+                raise
+
+        # Should not reach here, but just in case
+        raise RuntimeError("All AI model attempts failed")
 
     # ── Medical Coding ───────────────────────────────────────
 
@@ -143,14 +167,12 @@ class AIService:
         Analyze clinical documentation and suggest medical codes.
         Uses RAG to ground suggestions in official coding guidelines.
         """
-        # Step 1: Retrieve relevant coding guidelines from vector DB
         guidelines = await self.vector_store.search(
             collection="icd10_guidelines",
-            query=clinical_text[:500],  # Use first 500 chars as search query
+            query=clinical_text[:500],
             limit=10,
         )
 
-        # Step 2: Build prompt with RAG context
         system_prompt = self.prompts.coding_system_prompt()
         user_message = self.prompts.coding_user_prompt(
             clinical_text=clinical_text,
@@ -161,10 +183,7 @@ class AIService:
             guidelines_context=guidelines,
         )
 
-        # Step 3: Call Claude
-        response = await self._call_claude(system_prompt, user_message)
-
-        # Step 4: Parse structured response
+        response = await self._call_llm(system_prompt, user_message)
         return self._parse_coding_response(response)
 
     # ── Denial Classification ────────────────────────────────
@@ -180,7 +199,6 @@ class AIService:
         """
         AI-powered denial root cause analysis.
         """
-        # Retrieve relevant payer policies
         policies = await self.vector_store.search(
             collection="payer_policies",
             query=f"{payer_name} {denial_reason_code} denial policy",
@@ -197,7 +215,7 @@ class AIService:
             policy_context=policies,
         )
 
-        response = await self._call_claude(system_prompt, user_message)
+        response = await self._call_llm(system_prompt, user_message)
         return self._parse_denial_classification(response)
 
     # ── Appeal Generation ────────────────────────────────────
@@ -215,7 +233,6 @@ class AIService:
         Generate a compelling, compliant appeal letter.
         Uses RAG over policies, guidelines, and successful appeal templates.
         """
-        # Multi-query vector search for comprehensive context
         policy_context = await self.vector_store.search(
             collection="payer_policies",
             query=f"{payer_name} appeal {denial_info.get('reason_code', '')}",
@@ -246,9 +263,9 @@ class AIService:
             previous_appeals=previous_appeals,
         )
 
-        response = await self._call_claude(
+        response = await self._call_llm(
             system_prompt, user_message,
-            max_tokens=8192,  # Appeals need more tokens
+            max_tokens=8192,
             temperature=0.2,
         )
         return self._parse_appeal_response(response)
@@ -263,7 +280,6 @@ class AIService:
     ) -> AIClaimScrubInsight:
         """
         AI analysis of claim denial risk beyond rule-based scrubbing.
-        Considers payer patterns, historical data, and clinical context.
         """
         system_prompt = self.prompts.claim_risk_system_prompt()
         user_message = self.prompts.claim_risk_user_prompt(
@@ -272,13 +288,12 @@ class AIService:
             historical_denials=historical_denials,
         )
 
-        response = await self._call_claude(system_prompt, user_message)
+        response = await self._call_llm(system_prompt, user_message)
         return self._parse_scrub_insight(response)
 
     # ── Response Parsers ─────────────────────────────────────
 
     def _parse_coding_response(self, response: str) -> AICodingResponse:
-        """Parse Claude's coding response into structured format."""
         try:
             data = json.loads(self._extract_json(response))
             return AICodingResponse(**data)
@@ -312,7 +327,7 @@ class AIService:
 
     @staticmethod
     def _extract_json(text: str) -> str:
-        """Extract JSON from Claude's response, handling markdown code fences."""
+        """Extract JSON from model response, handling markdown code fences."""
         text = text.strip()
         if text.startswith("```json"):
             text = text[7:]

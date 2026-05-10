@@ -68,10 +68,11 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    env_file: .env.prod
     environment:
       POSTGRES_DB: medclaim_db
       POSTGRES_USER: medclaim
-      POSTGRES_PASSWORD: "265d79badc1a479e5278d7363e0fd66b"
+      POSTGRES_PASSWORD: "07c21453e7abad6102986d12be8f23c6"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -86,13 +87,13 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass "c37a68e6a0586bd217c0e6da1d3ac60f"
+    command: redis-server --appendonly yes --requirepass "8ac872bdbf44685f2a85b2ccf47b94ba"
     volumes:
       - redisdata:/data
     networks:
       - rcm-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "c37a68e6a0586bd217c0e6da1d3ac60f", "ping"]
+      test: ["CMD", "redis-cli", "-a", "8ac872bdbf44685f2a85b2ccf47b94ba", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -110,9 +111,10 @@ services:
   minio:
     image: minio/minio:latest
     restart: unless-stopped
+    env_file: .env.prod
     environment:
       MINIO_ROOT_USER: medclaim_minio
-      MINIO_ROOT_PASSWORD: "e4c8053ade06a397650846dfb274c03f"
+      MINIO_ROOT_PASSWORD: "db3d5e56a30686389bfc7c9968f689dd"
     volumes:
       - miniodata:/data
     networks:

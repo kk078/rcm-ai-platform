@@ -50,20 +50,13 @@ Write-Success ".env.prod found"
 
 # Check for required values
 $envContent = Get-Content ".env.prod" -Raw
-$missing = @()
 
-if ($envContent -notmatch 'ANTHROPIC_API_KEY=\S+') {
-    $missing += "ANTHROPIC_API_KEY"
-    Write-Warn "ANTHROPIC_API_KEY is empty — AI features will not work"
+if ($envContent -notmatch 'OLLAMA_API_KEY=\S+') {
+    Write-Warn "OLLAMA_API_KEY is empty — AI features will not work. Get key from https://ollama.com"
 }
 
 if ($envContent -notmatch 'TUNNEL_TOKEN=\S+') {
-    $missing += "TUNNEL_TOKEN"
     Write-Warn "TUNNEL_TOKEN is empty — Cloudflare Tunnel will not connect"
-}
-
-if ($missing.Count -eq 0) {
-    Write-Success "All required keys are set"
 }
 
 # ── Build frontends if needed ─────────────────────────────
@@ -115,7 +108,7 @@ Write-Success "Wait complete"
 # ── Run database migrations ────────────────────────────────
 Write-Step "Running database migrations"
 
-docker compose -f docker-compose.prod.yml exec api alembic upgrade head
+docker compose -f docker-compose.prod.yml exec -T api alembic upgrade head
 if ($LASTEXITCODE -eq 0) {
     Write-Success "Migrations applied"
 } else {
@@ -126,7 +119,7 @@ if ($LASTEXITCODE -eq 0) {
 Write-Step "Seeding reference data"
 
 if (Test-Path "scripts\seed_reference_data.py") {
-    docker compose -f docker-compose.prod.yml exec api python scripts/seed_reference_data.py
+    docker compose -f docker-compose.prod.yml exec -T api python scripts/seed_reference_data.py
     Write-Success "Reference data seeded"
 } else {
     Write-Warn "seed_reference_data.py not found — skipping"
@@ -135,7 +128,7 @@ if (Test-Path "scripts\seed_reference_data.py") {
 # ── Create admin user ─────────────────────────────────────
 Write-Step "Creating admin user"
 
-docker compose -f docker-compose.prod.yml exec api python scripts/create_admin.py
+docker compose -f docker-compose.prod.yml exec -T api python scripts/create_admin.py
 Write-Success "Admin user setup complete"
 
 # ── Health check ───────────────────────────────────────────
