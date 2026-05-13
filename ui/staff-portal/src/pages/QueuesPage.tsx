@@ -6,14 +6,16 @@ import api from '../lib/api';
 interface QueueItem {
   id: string;
   item_type: string;
-  priority: string;
+  priority: number;
+  priority_label: string;
   status: string;
   practice_name: string;
-  patient_name: string;
+  patient_name: string | null;
   claim_id: string | null;
   assigned_to: string | null;
+  assigned_to_name: string | null;
   created_at: string;
-  sla_deadline: string | null;
+  due_date: string | null;
 }
 
 interface QueueResponse {
@@ -37,7 +39,7 @@ export function QueuesPage() {
     queryFn: () =>
       api
         .get('/queues/my-queue', {
-          params: { priority: priority !== 'all' ? priority : undefined, status: status !== 'all' ? status : undefined, page, page_size: 20 },
+          params: { priority: priority !== 'all' ? priority : undefined, status: status !== 'all' ? status : undefined, page, page_size: 20, include_unassigned: true },
         })
         .then((r) => r.data),
   });
@@ -121,12 +123,12 @@ export function QueuesPage() {
                   <td className="px-4 py-3 text-sm text-gray-600">{item.patient_name}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{item.practice_name}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${priorityBadge(item.priority)}`}>
-                      {item.priority}
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${priorityBadge(item.priority_label)}`}>
+                      {item.priority_label}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{item.status.replace('_', ' ')}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{item.sla_deadline ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{item.due_date ? new Date(item.due_date).toLocaleDateString() : '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       {!item.assigned_to && item.status === 'pending' && (

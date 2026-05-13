@@ -20,23 +20,19 @@ interface KpiData {
   clean_claim_rate: number;
 }
 
-interface QueueSummary {
+interface DashboardData extends KpiData {
   my_queue_count: number;
   team_queue_count: number;
   unassigned_count: number;
 }
 
 export function DashboardPage() {
-  const { data: kpi, isLoading: kpiLoading } = useQuery<KpiData>({
+  const { data: dashboard, isLoading: kpiLoading } = useQuery<DashboardData>({
     queryKey: ['dashboard-kpi'],
     queryFn: () => api.get('/queues/dashboard').then((r) => r.data),
   });
 
-  const { data: queues } = useQuery<QueueSummary>({
-    queryKey: ['queue-summary'],
-    queryFn: () => api.get('/queues/my-queue').then((r) => r.data),
-  });
-
+  const kpi = dashboard;
   const kpiCards = kpi
     ? [
         { label: 'Total Claims', value: kpi.total_claims.toLocaleString(), icon: FileText, color: 'text-blue-600 bg-blue-50' },
@@ -55,7 +51,7 @@ export function DashboardPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="mt-1 text-sm text-gray-500">
-          {queues ? `${queues.my_queue_count} items in your queue` : 'Loading...'}
+          {dashboard ? `${dashboard.my_queue_count} items in your queue` : 'Loading...'}
         </p>
       </div>
 
