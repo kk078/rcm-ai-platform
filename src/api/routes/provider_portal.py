@@ -139,14 +139,8 @@ STATUS_DISPLAY = {
 
 
 def _get_practice_id(current_user: dict) -> UUID | None:
-    """Extract practice_id from current_user, raising 403 if not available."""
-    practice_id = current_user.get("practice_id")
-    if not practice_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Provider access required. No practice associated with this account.",
-        )
-    return practice_id
+    """Extract practice_id from current_user. Returns None for internal users without a practice."""
+    return current_user.get("practice_id")
 
 
 async def _build_claim_status_item(claim: Claim, db: AsyncSession) -> ClaimStatusItem:
@@ -222,6 +216,30 @@ async def get_portal_dashboard(
     Automatically scoped to the authenticated user's practice.
     """
     practice_id = _get_practice_id(current_user)
+    if not practice_id:
+        # Internal user without a practice — return empty dashboard
+        return PortalDashboard(
+            practice_name="",
+            period=period or datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m"),
+            total_charges_mtd=0,
+            total_collections_mtd=0,
+            total_adjustments_mtd=0,
+            net_collection_rate=0,
+            total_ar_balance=0,
+            ar_0_30=0,
+            ar_31_60=0,
+            ar_61_90=0,
+            ar_91_120=0,
+            ar_120_plus=0,
+            claims_submitted_mtd=0,
+            claims_paid_mtd=0,
+            claims_denied_mtd=0,
+            denial_rate=0,
+            charges_in_progress=0,
+            claims_pending_payer=0,
+            denials_being_worked=0,
+            appeals_pending=0,
+        )
     if period is None:
         period = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m")
 

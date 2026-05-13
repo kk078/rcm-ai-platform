@@ -780,14 +780,15 @@ async def intake_dashboard(
     by_practice = {row[0]: row[1] for row in practice_rows}
 
     # Aging buckets
+    from datetime import timedelta
+
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    from sqlalchemy import text as sa_text
 
     aging_24_q = await db.execute(
         select(func.count(ChargeEntry.id)).where(
             and_(
                 ChargeEntry.status.in_(["received", "needs_coding", "needs_info"]),
-                ChargeEntry.created_at <= now - sa_text("INTERVAL '24 hours'"),
+                ChargeEntry.created_at <= now - timedelta(hours=24),
             )
         )
     )
@@ -795,7 +796,7 @@ async def intake_dashboard(
         select(func.count(ChargeEntry.id)).where(
             and_(
                 ChargeEntry.status.in_(["received", "needs_coding", "needs_info"]),
-                ChargeEntry.created_at <= now - sa_text("INTERVAL '48 hours'"),
+                ChargeEntry.created_at <= now - timedelta(hours=48),
             )
         )
     )
@@ -803,7 +804,7 @@ async def intake_dashboard(
         select(func.count(ChargeEntry.id)).where(
             and_(
                 ChargeEntry.status.in_(["received", "needs_coding", "needs_info"]),
-                ChargeEntry.created_at <= now - sa_text("INTERVAL '72 hours'"),
+                ChargeEntry.created_at <= now - timedelta(hours=72),
             )
         )
     )
