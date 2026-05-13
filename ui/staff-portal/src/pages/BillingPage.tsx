@@ -3,13 +3,15 @@ import { Receipt, DollarSign, TrendingUp, AlertTriangle } from 'lucide-react';
 import api from '../lib/api';
 
 interface RevenueDashboard {
-  total_revenue: number;
-  outstanding: number;
-  collected_this_month: number;
-  overdue_count: number;
-  overdue_amount: number;
-  collection_rate: number;
-  monthly_revenue: { month: string; revenue: number; collected: number }[];
+  period: string;
+  total_invoiced: number;
+  total_collected: number;
+  total_outstanding: number;
+  total_overdue: number;
+  client_count: number;
+  avg_revenue_per_client: number;
+  revenue_by_fee_model: Record<string, number>;
+  top_clients: { practice_name: string; revenue: number }[];
 }
 
 interface Invoice {
@@ -66,7 +68,7 @@ export function BillingPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Total Revenue</p>
-                <p className="text-xl font-semibold text-gray-900">${dashboard?.total_revenue.toLocaleString()}</p>
+                <p className="text-xl font-semibold text-gray-900">${dashboard?.total_invoiced.toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -77,7 +79,7 @@ export function BillingPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Collected This Month</p>
-                <p className="text-xl font-semibold text-gray-900">${dashboard?.collected_this_month.toLocaleString()}</p>
+                <p className="text-xl font-semibold text-gray-900">${dashboard?.total_collected.toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -88,7 +90,7 @@ export function BillingPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Outstanding</p>
-                <p className="text-xl font-semibold text-gray-900">${dashboard?.outstanding.toLocaleString()}</p>
+                <p className="text-xl font-semibold text-gray-900">${dashboard?.total_outstanding.toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -99,7 +101,7 @@ export function BillingPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Overdue</p>
-                <p className="text-xl font-semibold text-gray-900">{dashboard?.overdue_count} (${dashboard?.overdue_amount.toLocaleString()})</p>
+                <p className="text-xl font-semibold text-gray-900">{dashboard?.total_overdue.toLocaleString()}</p>
               </div>
             </div>
           </div>

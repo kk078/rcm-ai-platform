@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional
 from uuid import UUID
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from sqlalchemy import select, func, case, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -673,7 +673,84 @@ async def get_staff_productivity(
     db: AsyncSession = Depends(get_db),
 ):
     """Individual staff productivity report."""
-    raise HTTPException(status_code=501, detail="Not yet implemented")
+    # Look up user
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_name = f"{user.first_name} {user.last_name}"
+    if date_from and date_to:
+        period_label = f"{date_from} to {date_to}"
+    elif date_from:
+        period_label = f"from {date_from}"
+    elif date_to:
+        period_label = f"up to {date_to}"
+    else:
+        period_label = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m")
+
+    # Query productivity records for this user
+    from src.infrastructure.database.models import StaffProductivity
+
+    conditions = [StaffProductivity.user_id == user_id]
+    if date_from:
+        conditions.append(StaffProductivity.date >= date_from)
+    if date_to:
+        conditions.append(StaffProductivity.date <= date_to)
+
+    prod_result = await db.execute(
+        select(StaffProductivity).where(and_(*conditions))
+    )
+    records = prod_result.scalars().all()
+
+    # Aggregate productivity metrics from recorded data
+    claims_submitted = sum(r.claims_submitted or 0 for r in records)
+    claims_dollar_amount = sum(r.claims_dollar_amount or 0 for r in records)
+    payments_posted = sum(r.payments_posted or 0 for r in records)
+    payments_dollar_amount = sum(r.payments_dollar_amount or 0 for r in records)
+    denials_worked = sum(r.denials_worked or 0 for r in records)
+    denials_recovered = sum(r.denials_dollar_recovered or 0 for r in records)
+    codes_reviewed = sum(r.codes_reviewed or 0 for r in records)
+    total_items = sum(r.items_completed or 0 for r in records)
+    total_days = len(set(r.date for r in records)) if records else 1
+    avg_items_per_day = round(total_items / total_days, 1) if total_days else 0.0
+
+    # SLA compliance: completed items that weren't breached vs total completed
+    completed_q = await db.execute(
+        select(func.count(WorkQueueItem.id)).where(
+            and_(
+                WorkQueueItem.assigned_to == user_id,
+                WorkQueueItem.status == "completed",
+            )
+        )
+    )
+    completed_total = completed_q.scalar() or 0
+
+    compliant_q = await db.execute(
+        select(func.count(WorkQueueItem.id)).where(
+            and_(
+                WorkQueueItem.assigned_to == user_id,
+                WorkQueueItem.status == "completed",
+                WorkQueueItem.sla_breached == False,
+            )
+        )
+    )
+    compliant = compliant_q.scalar() or 0
+    sla_compliance_pct = round((compliant / completed_total) * 100, 1) if completed_total else 0.0
+
+    return ProductivityReport(
+        user_name=user_name,
+        period=period_label,
+        claims_submitted=claims_submitted,
+        claims_dollar_amount=claims_dollar_amount,
+        payments_posted=payments_posted,
+        payments_dollar_amount=payments_dollar_amount,
+        denials_worked=denials_worked,
+        denials_recovered=denials_recovered,
+        codes_reviewed=codes_reviewed,
+        avg_items_per_day=avg_items_per_day,
+        sla_compliance_pct=sla_compliance_pct,
+    )
 
 
 # ── SLA Monitoring ───────────────────────────────────────────────

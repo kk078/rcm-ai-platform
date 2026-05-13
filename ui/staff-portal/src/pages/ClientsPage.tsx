@@ -3,42 +3,38 @@ import { useQuery } from '@tanstack/react-query';
 import { Building2, Search } from 'lucide-react';
 import api from '../lib/api';
 
-interface Client {
+interface Practice {
   id: string;
-  name: string;
-  contact_email: string;
-  contract_start: string;
-  contract_end: string;
-  active_practice_count: number;
+  practice_name: string;
+  legal_name: string | null;
+  group_npi: string | null;
+  specialty_primary: string | null;
   status: string;
-}
-
-interface ClientsResponse {
-  items: Client[];
-  total: number;
-  page: number;
-  page_size: number;
+  intake_method: string;
+  go_live_date: string | null;
+  provider_count: number | null;
+  active_claims_count: number | null;
 }
 
 export function ClientsPage() {
   const [search, setSearch] = useState('');
-  const { data, isLoading } = useQuery<ClientsResponse>({
+  const { data, isLoading } = useQuery<Practice[]>({
     queryKey: ['clients'],
     queryFn: () =>
       api
-        .get('/clients/', { params: { page_size: 20 } })
-        .then((r) => r.data),
+        .get('/clients/practices')
+        .then((r) => Array.isArray(r.data) ? r.data : r.data.items || []),
   });
 
-  const filtered = data?.items.filter(
-    (c) => !search || c.name.toLowerCase().includes(search.toLowerCase()),
+  const filtered = data?.filter(
+    (c) => !search || c.practice_name.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Client Management</h1>
-        <p className="mt-1 text-sm text-gray-500">{data?.total ?? 0} clients</p>
+        <p className="mt-1 text-sm text-gray-500">{filtered?.length ?? 0} practices</p>
       </div>
 
       <div className="mb-4">
@@ -62,37 +58,37 @@ export function ClientsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-4">
-          {filtered?.map((client) => (
-            <div key={client.id} className="rounded-xl border border-gray-200 bg-white p-5 hover:shadow-sm transition-shadow">
+          {filtered?.map((practice) => (
+            <div key={practice.id} className="rounded-xl border border-gray-200 bg-white p-5 hover:shadow-sm transition-shadow">
               <div className="flex items-center gap-3 mb-3">
                 <div className="h-10 w-10 rounded-lg bg-brand-50 flex items-center justify-center">
                   <Building2 className="h-5 w-5 text-brand-600" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900">{client.name}</h3>
-                  <p className="text-xs text-gray-500">{client.contact_email}</p>
+                  <h3 className="font-medium text-gray-900">{practice.practice_name}</h3>
+                  <p className="text-xs text-gray-500">{practice.specialty_primary || 'N/A'}</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>
-                  <p className="text-gray-500">Practices</p>
-                  <p className="font-medium text-gray-900">{client.active_practice_count}</p>
+                  <p className="text-gray-500">NPI</p>
+                  <p className="font-medium text-gray-900">{practice.group_npi || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Status</p>
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                    client.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                    practice.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                   }`}>
-                    {client.status}
+                    {practice.status}
                   </span>
                 </div>
                 <div>
-                  <p className="text-gray-500">Contract Start</p>
-                  <p className="text-gray-900">{client.contract_start}</p>
+                  <p className="text-gray-500">Go-Live</p>
+                  <p className="text-gray-900">{practice.go_live_date || 'TBD'}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500">Contract End</p>
-                  <p className="text-gray-900">{client.contract_end}</p>
+                  <p className="text-gray-500">Intake</p>
+                  <p className="text-gray-900">{practice.intake_method}</p>
                 </div>
               </div>
             </div>
