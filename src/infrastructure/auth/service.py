@@ -104,7 +104,8 @@ class AuthService:
         """Check if a user account is currently locked."""
         if user.locked_until is None:
             return False
-        if datetime.now(timezone.utc).replace(tzinfo=None) >= user.locked_until:
+        locked_until = user.locked_until.replace(tzinfo=None) if user.locked_until.tzinfo else user.locked_until
+        if datetime.now(timezone.utc).replace(tzinfo=None) >= locked_until:
             return False
         return True
 

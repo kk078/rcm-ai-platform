@@ -57,6 +57,23 @@ class CodeApproval(BaseModel):
     coder_notes: str | None = None
 
 
+class StartSessionRequest(BaseModel):
+    encounter_id: UUID
+
+
+class ValidationResult(BaseModel):
+    valid: bool
+    score: int = 0
+    findings: list[dict] = []
+
+
+class ApprovalResult(BaseModel):
+    session_id: UUID
+    encounter_id: UUID
+    claim_id: UUID
+    claim_number: str
+
+
 class CodeValidationRequest(BaseModel):
     diagnosis_codes: list[str]
     procedure_codes: list[str]

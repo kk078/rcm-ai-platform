@@ -54,9 +54,13 @@ class TokenBlacklist:
 
     async def add(self, token_jti: str, expires_at: datetime) -> None:
         """Add a token's jti to the blacklist."""
+        # Normalize to naive UTC for consistent comparison
+        if expires_at.tzinfo is not None:
+            expires_at = expires_at.replace(tzinfo=None)
         redis = await self._get_redis()
         if redis:
-            ttl = max(int((expires_at - datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds()), 0)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            ttl = max(int((expires_at - now).total_seconds()), 0)
             await redis.setex(f"blacklist:{token_jti}", ttl, "1")
             logger.debug("token_blacklisted_redis", jti=token_jti)
         else:

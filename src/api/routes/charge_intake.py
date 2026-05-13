@@ -102,6 +102,17 @@ class BatchImportResult(BaseModel):
     errors: list[dict]  # [{row: int, field: str, message: str}]
 
 
+class ValidationResult(BaseModel):
+    valid: bool
+    errors: list[str] = []
+
+
+class RoutingResult(BaseModel):
+    charge_id: UUID
+    encounter_id: UUID | None = None
+    claim_id: UUID | None = None
+
+
 class RejectRequest(BaseModel):
     reason: str
 

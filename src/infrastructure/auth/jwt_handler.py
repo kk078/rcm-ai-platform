@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from jose import jwt
+from jose.exceptions import ExpiredSignatureError, JWTError
 import structlog
 
 from src.config import get_settings
@@ -72,9 +73,9 @@ def decode_token(token: str) -> dict:
             algorithms=[settings.jwt_algorithm],
         )
         return payload
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         raise AuthenticationError("Token has expired")
-    except jwt.InvalidTokenError as e:
+    except JWTError as e:
         raise AuthenticationError(f"Invalid token: {e}")
 
 

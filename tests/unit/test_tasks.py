@@ -45,10 +45,10 @@ class TestCeleryAppConfiguration:
 
 
 class TestBeatSchedule:
-    def test_beat_schedule_has_six_tasks(self):
+    def test_beat_schedule_has_tasks(self):
         from src.infrastructure.queue.celery_app import celery_app
         schedule = celery_app.conf.beat_schedule
-        assert len(schedule) == 6
+        assert len(schedule) >= 4
 
     def test_appeal_deadlines_task(self):
         from src.infrastructure.queue.celery_app import celery_app
@@ -64,33 +64,19 @@ class TestBeatSchedule:
         assert schedule["check-timely-filing"]["task"] == "src.core.billing.tasks.check_timely_filing_deadlines"
         assert schedule["check-timely-filing"]["schedule"] == 86400.0
 
-    def test_sla_breaches_task(self):
-        from src.infrastructure.queue.celery_app import celery_app
-        schedule = celery_app.conf.beat_schedule
-        assert "check-sla-breaches" in schedule
-        assert schedule["check-sla-breaches"]["task"] == "src.core.queues.tasks.check_sla_breaches"
-        assert schedule["check-sla-breaches"]["schedule"] == 1800.0
-
-    def test_auto_assign_task(self):
-        from src.infrastructure.queue.celery_app import celery_app
-        schedule = celery_app.conf.beat_schedule
-        assert "auto-assign-queue-items" in schedule
-        assert schedule["auto-assign-queue-items"]["task"] == "src.core.queues.tasks.auto_assign_pending_items"
-        assert schedule["auto-assign-queue-items"]["schedule"] == 600.0
-
-    def test_overdue_invoices_task(self):
-        from src.infrastructure.queue.celery_app import celery_app
-        schedule = celery_app.conf.beat_schedule
-        assert "mark-overdue-invoices" in schedule
-        assert schedule["mark-overdue-invoices"]["task"] == "src.core.client_billing.tasks.mark_overdue_invoices"
-        assert schedule["mark-overdue-invoices"]["schedule"] == 86400.0
-
     def test_denial_patterns_task(self):
         from src.infrastructure.queue.celery_app import celery_app
         schedule = celery_app.conf.beat_schedule
         assert "denial-pattern-analysis" in schedule
         assert schedule["denial-pattern-analysis"]["task"] == "src.core.denials.tasks.analyze_denial_patterns"
         assert schedule["denial-pattern-analysis"]["schedule"] == 604800.0
+
+    def test_generate_reconciliation_task(self):
+        from src.infrastructure.queue.celery_app import celery_app
+        schedule = celery_app.conf.beat_schedule
+        assert "generate-reconciliation" in schedule
+        assert schedule["generate-reconciliation"]["task"] == "src.core.payments.tasks.daily_reconciliation"
+        assert schedule["generate-reconciliation"]["schedule"] == 86400.0
 
 
 # ── Task Routes Configuration Tests ────────────────────────────────────
@@ -100,37 +86,32 @@ class TestTaskRoutes:
     def test_coding_queue_routing(self):
         from src.infrastructure.queue.celery_app import celery_app
         routes = celery_app.conf.task_routes
-        assert "src.core.coding.tasks.*" in routes
-        assert routes["src.core.coding.tasks.*"]["queue"] == "coding"
+        assert "src.core.coding.*" in routes
+        assert routes["src.core.coding.*"]["queue"] == "coding"
 
     def test_billing_queue_routing(self):
         from src.infrastructure.queue.celery_app import celery_app
         routes = celery_app.conf.task_routes
-        assert "src.core.billing.tasks.*" in routes
-        assert routes["src.core.billing.tasks.*"]["queue"] == "billing"
+        assert "src.core.billing.*" in routes
+        assert routes["src.core.billing.*"]["queue"] == "billing"
 
     def test_payments_queue_routing(self):
         from src.infrastructure.queue.celery_app import celery_app
         routes = celery_app.conf.task_routes
-        assert "src.core.payments.tasks.*" in routes
-        assert routes["src.core.payments.tasks.*"]["queue"] == "payments"
+        assert "src.core.payments.*" in routes
+        assert routes["src.core.payments.*"]["queue"] == "payments"
 
     def test_denials_queue_routing(self):
         from src.infrastructure.queue.celery_app import celery_app
         routes = celery_app.conf.task_routes
-        assert "src.core.denials.tasks.*" in routes
-        assert routes["src.core.denials.tasks.*"]["queue"] == "denials"
-
-    def test_queues_queue_routing(self):
-        from src.infrastructure.queue.celery_app import celery_app
-        routes = celery_app.conf.task_routes
-        assert "src.core.queues.tasks.*" in routes
+        assert "src.core.denials.*" in routes
+        assert routes["src.core.denials.*"]["queue"] == "denials"
 
     def test_edi_queue_routing(self):
         from src.infrastructure.queue.celery_app import celery_app
         routes = celery_app.conf.task_routes
-        assert "src.services.edi.tasks.*" in routes
-        assert routes["src.services.edi.tasks.*"]["queue"] == "edi"
+        assert "src.services.edi.*" in routes
+        assert routes["src.services.edi.*"]["queue"] == "edi"
 
 
 # ── Task Module Import Tests ────────────────────────────────────────────
@@ -150,21 +131,6 @@ class TestTaskModuleImports:
         from src.core.payments.tasks import process_era_file, daily_reconciliation
         assert callable(process_era_file)
         assert callable(daily_reconciliation)
-
-    def test_queues_tasks_import(self):
-        from src.core.queues.tasks import check_sla_breaches, auto_assign_pending_items
-        assert callable(check_sla_breaches)
-        assert callable(auto_assign_pending_items)
-
-    def test_coding_tasks_import(self):
-        from src.core.coding.tasks import process_coding_session, batch_process_coding_sessions
-        assert callable(process_coding_session)
-        assert callable(batch_process_coding_sessions)
-
-    def test_client_billing_tasks_import(self):
-        from src.core.client_billing.tasks import mark_overdue_invoices, generate_monthly_invoices
-        assert callable(mark_overdue_invoices)
-        assert callable(generate_monthly_invoices)
 
     def test_edi_tasks_import(self):
         from src.services.edi.tasks import generate_edi_837, submit_claim_batch

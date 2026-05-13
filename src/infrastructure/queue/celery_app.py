@@ -30,8 +30,8 @@ celery_app.conf.update(
     task_routes={
         "src.core.coding.*": {"queue": "coding"},
         "src.core.billing.*": {"queue": "billing"},
-        "src.core.payment_posting.*": {"queue": "payments"},
-        "src.core.denial_management.*": {"queue": "denials"},
+        "src.core.payments.*": {"queue": "payments"},
+        "src.core.denials.*": {"queue": "denials"},
         "src.services.edi.*": {"queue": "edi"},
     },
 
@@ -42,23 +42,19 @@ celery_app.conf.update(
     # Beat schedule for periodic tasks
     beat_schedule={
         "check-appeal-deadlines": {
-            "task": "src.core.denial_management.tasks.check_appeal_deadlines",
+            "task": "src.core.denials.tasks.check_appeal_deadlines",
             "schedule": 3600.0,  # Every hour
         },
         "check-timely-filing": {
             "task": "src.core.billing.tasks.check_timely_filing_deadlines",
             "schedule": 86400.0,  # Daily
         },
-        "sync-payer-policies": {
-            "task": "src.services.payer_intelligence.tasks.sync_policies",
-            "schedule": 86400.0,  # Daily
-        },
         "generate-reconciliation": {
-            "task": "src.core.payment_posting.tasks.daily_reconciliation",
+            "task": "src.core.payments.tasks.daily_reconciliation",
             "schedule": 86400.0,  # Daily
         },
         "denial-pattern-analysis": {
-            "task": "src.core.denial_management.tasks.analyze_patterns",
+            "task": "src.core.denials.tasks.analyze_denial_patterns",
             "schedule": 604800.0,  # Weekly
         },
     },
@@ -67,8 +63,9 @@ celery_app.conf.update(
 celery_app.autodiscover_tasks([
     "src.core.coding",
     "src.core.billing",
-    "src.core.payment_posting",
-    "src.core.denial_management",
+    "src.core.payments",
+    "src.core.denials",
+    "src.core.queues",
+    "src.core.client_billing",
     "src.services.edi",
-    "src.services.payer_intelligence",
 ])
