@@ -561,7 +561,7 @@ class PortalService:
             raise MessageNotFoundError(message_id)
 
         message.is_read = True
-        message.read_at = datetime.now(timezone.utc)
+        message.read_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await db.flush()
 
         await _write_audit(
@@ -613,7 +613,7 @@ class PortalService:
         )
         notifications = list(result.scalars().all())
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         for notification in notifications:
             notification.is_read = True
             notification.read_at = now
@@ -634,7 +634,7 @@ class PortalService:
         self, db: AsyncSession, practice_id: UUID,
     ) -> list[dict]:
         """List report types available for this practice."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         current_month = now.strftime("%Y-%m")
         return [
             {
@@ -723,7 +723,7 @@ class PortalService:
         ar_aging = await self._compute_ar_aging(db, practice_id)
 
         # Breakdown by payer
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         payer_aging = await db.execute(
             select(
                 Payer.payer_name,
@@ -1010,7 +1010,7 @@ class PortalService:
         self, db: AsyncSession, practice_id: UUID,
     ) -> dict:
         """Compute AR aging buckets for a practice."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         buckets = {
             "0_30": 0.0,
             "31_60": 0.0,

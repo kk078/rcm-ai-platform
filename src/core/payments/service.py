@@ -428,7 +428,7 @@ class PaymentService:
         # Update batch status
         batch.status = "posted"
         batch.posted_by = user_id
-        batch.posted_date = datetime.now(timezone.utc)
+        batch.posted_date = datetime.now(timezone.utc).replace(tzinfo=None)
         batch.auto_posted = auto_only
 
         await db.flush()
@@ -906,7 +906,7 @@ class PaymentService:
                     claim_line.allowed_amount = payment_line.allowed_amount
 
         # Set claim adjudication date
-        claim.adjudication_date = datetime.now(timezone.utc)
+        claim.adjudication_date = datetime.now(timezone.utc).replace(tzinfo=None)
 
         payment_line.match_status = "matched"
         await db.flush()

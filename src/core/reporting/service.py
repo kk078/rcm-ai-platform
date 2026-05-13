@@ -8,7 +8,7 @@ ServiceAgreements to produce cross-practice analytics.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 import structlog
@@ -357,9 +357,7 @@ class AnalyticsService:
         practice_id: UUID | None = None,
     ) -> dict:
         """AR aging report: 0-30, 31-60, 61-90, 91-120, 120+ days."""
-        from datetime import datetime, timezone
-
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         base_filter = [
             Claim.status.notin_(["paid", "closed", "written_off"]),

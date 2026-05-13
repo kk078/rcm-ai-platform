@@ -83,7 +83,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         )
 
     if auth_service.is_account_locked(user):
-        remaining = (user.locked_until - datetime.now(timezone.utc)).seconds // 60
+        remaining = (user.locked_until - datetime.now(timezone.utc).replace(tzinfo=None)).seconds // 60
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail=f"Account locked. Try again in {remaining} minutes.",
@@ -122,7 +122,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # Successful login
     auth_service.reset_failed_logins(user)
-    user.last_login = datetime.now(timezone.utc)
+    user.last_login = datetime.now(timezone.utc).replace(tzinfo=None)
 
     token_data = TokenData(
         user_id=user.id,

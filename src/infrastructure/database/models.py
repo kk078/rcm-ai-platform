@@ -10,6 +10,11 @@ Model declaration order follows FK dependency: referenced tables before referenc
 import uuid
 from datetime import date, datetime, timezone
 
+
+def utcnow():
+    """Return naive UTC datetime for TIMESTAMP WITHOUT TIME ZONE columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 from sqlalchemy import (
     ARRAY,
     BigInteger,
@@ -35,11 +40,11 @@ from src.infrastructure.auth.encryption import EncryptedString
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc), nullable=False
+        default=lambda: utcnow(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: utcnow(),
+        onupdate=lambda: utcnow(),
         nullable=False,
     )
 
@@ -125,7 +130,7 @@ class PracticeLocation(Base):
     facility_npi: Mapped[str | None] = mapped_column(String(10))
     is_primary: Mapped[bool] = mapped_column(default=False)
     is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     practice: Mapped["Practice"] = relationship(back_populates="locations")
 
@@ -158,7 +163,7 @@ class User(Base, TimestampMixin):
     last_login: Mapped[datetime | None]
     mfa_enabled: Mapped[bool] = mapped_column(default=False)
     mfa_secret: Mapped[str | None] = mapped_column(EncryptedString)
-    password_changed_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    password_changed_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
     failed_login_count: Mapped[int] = mapped_column(default=0)
     locked_until: Mapped[datetime | None]
 
@@ -632,7 +637,7 @@ class ClaimScrubResult(Base):
     resolved: Mapped[bool] = mapped_column(default=False)
     resolved_by: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
     resolved_at: Mapped[datetime | None]
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     claim: Mapped["Claim"] = relationship(back_populates="scrub_results")
 
@@ -700,7 +705,7 @@ class PaymentBatch(Base):
     status: Mapped[str] = mapped_column(String(20), default="received")
     posted_by: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
     auto_posted: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     __table_args__ = (
         Index("idx_payment_batch_payer", "payer_id"),
@@ -730,7 +735,7 @@ class PaymentLine(Base):
     match_confidence: Mapped[float | None]  # DECIMAL(5,4)
     is_underpaid: Mapped[bool] = mapped_column(default=False)
     underpayment_amount: Mapped[float | None]
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     __table_args__ = (
         Index("idx_payment_line_batch", "batch_id"),
@@ -750,7 +755,7 @@ class Adjustment(Base):
     amount: Mapped[float] = mapped_column(nullable=False)  # DECIMAL(12,2)
     remark_codes: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)))
     is_denial: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     __table_args__ = (
         Index("idx_adj_payment_line", "payment_line_id"),
@@ -866,10 +871,10 @@ class ChargeBatch(Base):
     processed_charges: Mapped[int] = mapped_column(default=0)
     error_charges: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String(20), default="received")
-    received_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
     processed_at: Mapped[datetime | None]
     notes: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     practice: Mapped["Practice"] = relationship(back_populates="charge_batches")
 
@@ -964,7 +969,7 @@ class PortalMessage(Base):
     requires_response: Mapped[bool] = mapped_column(default=False)
     response_deadline: Mapped[datetime | None]
 
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     practice: Mapped["Practice"] = relationship(back_populates="portal_messages")
 
@@ -987,7 +992,7 @@ class PortalNotification(Base):
     link_url: Mapped[str | None] = mapped_column(String(500))
     is_read: Mapped[bool] = mapped_column(default=False)
     read_at: Mapped[datetime | None]
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     practice: Mapped["Practice"] = relationship(back_populates="portal_notifications")
 
@@ -1008,7 +1013,7 @@ class StaffAssignment(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("users.id"), nullable=False)
     role_in_practice: Mapped[str] = mapped_column(String(30), nullable=False)  # coder, biller, poster, denial_analyst, manager
     is_primary: Mapped[bool] = mapped_column(default=False)
-    assigned_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    assigned_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
     assigned_by: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
 
     practice: Mapped["Practice"] = relationship(back_populates="staff_assignments")
@@ -1073,7 +1078,7 @@ class StaffProductivity(Base):
     codes_reviewed: Mapped[int | None]
     coding_accuracy_pct: Mapped[float | None]  # DECIMAL(5,2)
 
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     __table_args__ = (
         UniqueConstraint("user_id", "practice_id", "date", "queue_type", name="uq_productivity"),
@@ -1146,7 +1151,7 @@ class AuditLog(Base):
     request_method: Mapped[str | None] = mapped_column(String(10))
     response_status: Mapped[int | None]
     phi_accessed: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
 
     __table_args__ = (
         Index("idx_audit_user", "user_id"),

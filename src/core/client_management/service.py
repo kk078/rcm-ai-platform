@@ -207,7 +207,7 @@ class PracticeService:
 
         practice.status = "active"
         practice.go_live_date = date.today()
-        practice.onboarded_at = datetime.now(timezone.utc)
+        practice.onboarded_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await db.flush()
 
         await _write_audit(
@@ -254,7 +254,7 @@ class PracticeService:
     ) -> Practice:
         practice = await self.get_practice(db, practice_id)
         practice.status = "terminated"
-        practice.terminated_at = datetime.now(timezone.utc)
+        practice.terminated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         practice.termination_reason = reason
 
         # Deactivate all portal users for this practice

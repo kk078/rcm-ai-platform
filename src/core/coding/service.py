@@ -234,7 +234,7 @@ class CodingService:
             if patient:
                 patient_gender = patient.gender
                 if patient.date_of_birth:
-                    patient_age = (datetime.now(timezone.utc).date() - patient.date_of_birth).days // 365
+                    patient_age = (datetime.now(timezone.utc).replace(tzinfo=None).date() - patient.date_of_birth).days // 365
 
         # 3. Assemble clinical text
         clinical_text = self._assemble_clinical_text(encounter)
@@ -352,7 +352,7 @@ class CodingService:
             if patient:
                 patient_gender = patient.gender
                 if patient.date_of_birth:
-                    patient_age = (datetime.now(timezone.utc).date() - patient.date_of_birth).days // 365
+                    patient_age = (datetime.now(timezone.utc).replace(tzinfo=None).date() - patient.date_of_birth).days // 365
 
         # Combine encounter notes with document text
         clinical_text = text
@@ -480,7 +480,7 @@ class CodingService:
             coder_changes["coder_notes"] = coder_notes
 
         # Update session
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         review_started = session.review_started_at or now
         session.final_codes = {
             "diagnoses": approved_diagnoses,

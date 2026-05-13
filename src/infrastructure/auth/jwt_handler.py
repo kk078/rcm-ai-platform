@@ -25,7 +25,7 @@ class AuthenticationError(Exception):
 
 def create_access_token(data: TokenData) -> str:
     """Create a short-lived access token (default 15 minutes)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
     payload = {
         "sub": str(data.user_id),
@@ -45,7 +45,7 @@ def create_access_token(data: TokenData) -> str:
 
 def create_refresh_token(data: TokenData) -> str:
     """Create a long-lived refresh token (default 7 days)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     expires_delta = timedelta(days=settings.jwt_refresh_token_expire_days)
     payload = {
         "sub": str(data.user_id),

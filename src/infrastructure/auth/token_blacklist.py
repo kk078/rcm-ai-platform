@@ -56,7 +56,7 @@ class TokenBlacklist:
         """Add a token's jti to the blacklist."""
         redis = await self._get_redis()
         if redis:
-            ttl = max(int((expires_at - datetime.now(timezone.utc)).total_seconds()), 0)
+            ttl = max(int((expires_at - datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds()), 0)
             await redis.setex(f"blacklist:{token_jti}", ttl, "1")
             logger.debug("token_blacklisted_redis", jti=token_jti)
         else:
@@ -70,7 +70,7 @@ class TokenBlacklist:
             return await redis.exists(f"blacklist:{token_jti}") > 0
 
         # In-memory: evict expired entries on each check
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         expired_jtis = [jti for jti, exp in self._revoked.items() if exp < now]
         for jti in expired_jtis:
             del self._revoked[jti]

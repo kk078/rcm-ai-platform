@@ -104,7 +104,7 @@ class AuthService:
         """Check if a user account is currently locked."""
         if user.locked_until is None:
             return False
-        if datetime.now(timezone.utc) >= user.locked_until:
+        if datetime.now(timezone.utc).replace(tzinfo=None) >= user.locked_until:
             return False
         return True
 
@@ -116,7 +116,7 @@ class AuthService:
         """
         user.failed_login_count += 1
         if user.failed_login_count >= MAX_LOGIN_ATTEMPTS:
-            user.locked_until = datetime.now(timezone.utc) + LOCKOUT_DURATION
+            user.locked_until = datetime.now(timezone.utc).replace(tzinfo=None) + LOCKOUT_DURATION
             logger.warning("account_locked", user_id=str(user.id), failed_count=user.failed_login_count)
         return {"failed_login_count": user.failed_login_count, "locked_until": user.locked_until}
 
@@ -195,7 +195,7 @@ class AuthService:
         challenge_id = uuid4()
         self._mfa_challenges[challenge_id] = {
             "user_id": user.id,
-            "expires_at": datetime.now(timezone.utc) + MFA_CHALLENGE_TTL,
+            "expires_at": datetime.now(timezone.utc).replace(tzinfo=None) + MFA_CHALLENGE_TTL,
         }
         logger.debug("mfa_challenge_created", challenge_id=str(challenge_id), user_id=str(user.id))
         return MFAChallengeResponse(
@@ -215,7 +215,7 @@ class AuthService:
         if not challenge:
             raise ChallengeExpiredError("MFA challenge not found or expired")
 
-        if datetime.now(timezone.utc) > challenge["expires_at"]:
+        if datetime.now(timezone.utc).replace(tzinfo=None) > challenge["expires_at"]:
             del self._mfa_challenges[challenge_id]
             raise ChallengeExpiredError("MFA challenge has expired")
 
@@ -236,7 +236,7 @@ class AuthService:
 
         # Issue tokens
         self.reset_failed_logins(user)
-        user.last_login = datetime.now(timezone.utc)
+        user.last_login = datetime.now(timezone.utc).replace(tzinfo=None)
 
         token_data = TokenData(
             user_id=user.id,
@@ -302,7 +302,7 @@ class AuthService:
 
         # Successful login — no MFA
         self.reset_failed_logins(user)
-        user.last_login = datetime.now(timezone.utc)
+        user.last_login = datetime.now(timezone.utc).replace(tzinfo=None)
 
         token_data = TokenData(
             user_id=user.id,

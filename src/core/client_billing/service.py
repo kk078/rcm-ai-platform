@@ -367,7 +367,7 @@ class BillingService:
             raise InvoiceStatusError(f"Cannot send invoice in '{invoice.status}' status. Must be 'draft'.")
 
         invoice.status = "sent"
-        invoice.sent_at = datetime.now(timezone.utc)
+        invoice.sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
         invoice.due_date = date.today() + timedelta(days=30)  # Net 30
         await db.flush()
 
@@ -402,7 +402,7 @@ class BillingService:
         invoice.paid_amount = paid_amount
         invoice.payment_method = payment_method
         invoice.payment_reference = payment_reference
-        invoice.paid_at = datetime.now(timezone.utc)
+        invoice.paid_at = datetime.now(timezone.utc).replace(tzinfo=None)
         invoice.status = "paid"
         await db.flush()
 

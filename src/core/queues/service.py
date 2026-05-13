@@ -188,7 +188,7 @@ class QueueService:
 
         item.assigned_to = user_id
         item.status = "in_progress"
-        item.started_at = datetime.now(timezone.utc)
+        item.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await db.flush()
 
         await _write_audit(
@@ -250,7 +250,7 @@ class QueueService:
             raise QueueItemStatusError(f"Cannot complete item in '{item.status}' status. Must be 'in_progress'.")
 
         item.status = "completed"
-        item.completed_at = datetime.now(timezone.utc)
+        item.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if time_spent_seconds:
             item.time_spent_seconds = time_spent_seconds
         elif item.started_at:
@@ -319,7 +319,7 @@ class QueueService:
 
         item.assigned_to = assigned_to
         item.status = "in_progress"
-        item.started_at = datetime.now(timezone.utc)
+        item.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await db.flush()
 
         await _write_audit(
@@ -360,7 +360,7 @@ class QueueService:
 
             item.assigned_to = assigned_to
             item.status = "in_progress"
-            item.started_at = datetime.now(timezone.utc)
+            item.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
             assigned_count += 1
 
         await db.flush()
@@ -422,7 +422,7 @@ class QueueService:
             staff_member = available_staff[i % len(available_staff)]
             item.assigned_to = staff_member
             item.status = "in_progress"
-            item.started_at = datetime.now(timezone.utc)
+            item.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
             assigned_count += 1
 
         await db.flush()
@@ -724,7 +724,7 @@ class QueueService:
     ) -> int:
         """Check all pending/in-progress items for SLA breaches and mark them.
         Returns the number of newly breached items."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Get all active items with due dates
         result = await db.execute(

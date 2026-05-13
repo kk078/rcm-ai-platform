@@ -406,7 +406,7 @@ class ClaimService:
 
         # Update claim status
         claim.status = "submitted"
-        claim.submission_date = datetime.now(timezone.utc)
+        claim.submission_date = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Get clearinghouse config from practice
         practice_result = await db.execute(select(Practice).where(Practice.id == practice_id))
@@ -473,7 +473,7 @@ class ClaimService:
                 continue
 
             claim.status = "submitted"
-            claim.submission_date = datetime.now(timezone.utc)
+            claim.submission_date = datetime.now(timezone.utc).replace(tzinfo=None)
             claim.clearinghouse_ref = f"CH-{uuid4().hex[:8].upper()}"
             submitted.append(str(cid))
 

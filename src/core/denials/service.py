@@ -411,7 +411,7 @@ class DenialService:
             queue_type="follow_up",
             item_type="denial",
             item_id=denial_id,
-            due_date=datetime.now(timezone.utc) + timedelta(days=30),
+            due_date=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
         )
         db.add(wqi)
 
@@ -444,7 +444,7 @@ class DenialService:
 
         denial.status = "written_off"
         denial.resolution = "written_off"
-        denial.resolved_at = datetime.now(timezone.utc)
+        denial.resolved_at = datetime.now(timezone.utc).replace(tzinfo=None)
         denial.resolved_by = user_id
         await db.flush()
 
