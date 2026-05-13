@@ -20,6 +20,19 @@ class PaymentMatchStatus(str, Enum):
     EXCEPTION = "exception"
 
 
+class ManualMatchRequest(BaseModel):
+    claim_id: UUID
+
+
+class DisputeUnderpaymentRequest(BaseModel):
+    expected_amount: float
+    notes: str | None = None
+
+
+class PostBatchRequest(BaseModel):
+    auto_only: bool = True
+
+
 class BatchStatus(str, Enum):
     RECEIVED = "received"
     PROCESSING = "processing"
@@ -134,7 +147,7 @@ async def get_batch_lines(
 
 
 @router.post("/batches/{batch_id}/post")
-async def post_batch(batch_id: UUID, auto_only: bool = True):
+async def post_batch(batch_id: UUID, body: PostBatchRequest | None = None):
     """
     Post matched payments. If auto_only=True, only posts high-confidence matches.
     Otherwise, posts all matched payments including manual matches.
@@ -143,13 +156,13 @@ async def post_batch(batch_id: UUID, auto_only: bool = True):
 
 
 @router.post("/lines/{line_id}/match")
-async def manual_match(line_id: UUID, claim_id: UUID):
+async def manual_match(line_id: UUID, body: ManualMatchRequest):
     """Manually match an unmatched payment line to a claim."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
 @router.post("/lines/{line_id}/dispute-underpayment")
-async def dispute_underpayment(line_id: UUID, expected_amount: float, notes: str):
+async def dispute_underpayment(line_id: UUID, body: DisputeUnderpaymentRequest):
     """Flag an underpayment for dispute with the payer."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 

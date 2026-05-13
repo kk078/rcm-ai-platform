@@ -80,6 +80,28 @@ class StaffWorkload(BaseModel):
     queues: dict[str, int]  # {queue_type: count}
 
 
+class ReleaseRequest(BaseModel):
+    reason: str | None = None
+
+
+class EscalateRequest(BaseModel):
+    reason: str
+    escalate_to: UUID | None = None
+
+
+class CompleteRequest(BaseModel):
+    time_spent_seconds: int | None = None
+
+
+class AssignRequest(BaseModel):
+    assign_to: UUID
+
+
+class BulkAssignRequest(BaseModel):
+    item_ids: list[UUID]
+    assign_to: UUID
+
+
 class ProductivityReport(BaseModel):
     user_name: str
     period: str
@@ -151,45 +173,40 @@ async def claim_queue_item(item_id: UUID):
 
 
 @router.post("/queue/{item_id}/release")
-async def release_queue_item(item_id: UUID, reason: str | None = None):
+async def release_queue_item(item_id: UUID, body: ReleaseRequest | None = None):
     """Release a claimed item back to the queue (e.g., need more info)."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
 @router.post("/queue/{item_id}/complete")
-async def complete_queue_item(item_id: UUID, time_spent_seconds: int | None = None):
+async def complete_queue_item(item_id: UUID, body: CompleteRequest | None = None):
     """Mark a queue item as completed. Records time spent."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
 @router.post("/queue/{item_id}/escalate")
-async def escalate_queue_item(item_id: UUID, reason: str, escalate_to: UUID | None = None):
+async def escalate_queue_item(item_id: UUID, body: EscalateRequest):
     """Escalate an item to a manager or senior staff member."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
 @router.post("/queue/{item_id}/assign")
-async def assign_queue_item(item_id: UUID, assign_to: UUID):
+async def assign_queue_item(item_id: UUID, body: AssignRequest):
     """Manager assigns a queue item to a specific staff member."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
 @router.post("/queue/bulk-assign")
-async def bulk_assign(
-    item_ids: list[UUID],
-    assign_to: UUID,
-):
+async def bulk_assign(body: BulkAssignRequest):
     """Manager bulk-assigns multiple items to one staff member."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
 @router.post("/queue/auto-assign")
-async def trigger_auto_assignment(queue_type: QueueType, practice_id: UUID | None = None):
+async def trigger_auto_assignment(body: dict):
     """
-    Run the auto-assignment algorithm for a queue:
-    1. Get all unassigned items in the queue
-    2. Get all eligible staff (assigned to the practice + correct role)
-    3. Distribute based on: current workload, specialty match, round-robin
+    Run the auto-assignment algorithm for a queue.
+    Body: { "queue_type": "coding", "practice_id": "uuid-or-null" }
     """
     raise HTTPException(status_code=501, detail="Not yet implemented")
 

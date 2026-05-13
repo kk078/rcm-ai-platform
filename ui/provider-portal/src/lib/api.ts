@@ -7,6 +7,7 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Request interceptor: attach JWT access token
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('provider_access_token');
   if (token) {
@@ -15,12 +16,27 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Response interceptor: transform error detail arrays into strings + auto-redirect on 401
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    // Transform FastAPI validation error arrays into a clean string
+    if (error.response?.data?.detail && Array.isArray(error.response.data.detail)) {
+      error.response.data.detail = error.response.data.detail
+        .map((e: any) => {
+          if (typeof e === 'string') return e;
+          if (e.msg) {
+            const field = e.loc ? e.loc.filter((l: any) => l !== 'body').join(' → ') : '';
+            return field ? `${field}: ${e.msg}` : e.msg;
+          }
+          return JSON.stringify(e);
+        })
+        .join('. ');
+    }
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Auto-redirect to login on 401 (unless already on login page or refreshing token)
+    if (error.response?.status === 401 && !error.config._retry) {
+      const originalRequest = error.config;
       originalRequest._retry = true;
       const refreshToken = localStorage.getItem('provider_refresh_token');
 
@@ -30,17 +46,26 @@ api.interceptors.response.use(
             refresh_token: refreshToken,
           });
           localStorage.setItem('provider_access_token', data.access_token);
-          localStorage.setItem('provider_refresh_token', data.refresh_token);
+          if (data.refresh_token) {
+            localStorage.setItem('provider_refresh_token', data.refresh_token);
+          }
           originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
           return api(originalRequest);
         } catch {
           localStorage.removeItem('provider_access_token');
           localStorage.removeItem('provider_refresh_token');
-          window.location.href = '/login';
+          localStorage.removeItem('provider_user');
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login';
+          }
           return Promise.reject(error);
         }
       } else {
-        window.location.href = '/login';
+        localStorage.removeItem('provider_access_token');
+        localStorage.removeItem('provider_user');
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login';
+        }
       }
     }
 

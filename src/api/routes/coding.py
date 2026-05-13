@@ -52,6 +52,12 @@ class CodeApproval(BaseModel):
     coder_notes: str | None = None
 
 
+class CodeValidationRequest(BaseModel):
+    diagnosis_codes: list[str]
+    procedure_codes: list[str]
+    payer_id: UUID | None = None
+
+
 # ── Endpoints ────────────────────────────────────────────────────
 
 @router.post("/sessions", response_model=CodingSessionResponse, status_code=201)
@@ -102,11 +108,7 @@ async def get_relevant_guidelines(session_id: UUID):
 
 
 @router.post("/validate")
-async def validate_code_combination(
-    diagnosis_codes: list[str],
-    procedure_codes: list[str],
-    payer_id: UUID | None = None,
-):
+async def validate_code_combination(body: CodeValidationRequest):
     """
     Validate a combination of diagnosis and procedure codes.
     Checks medical necessity, NCCI edits, and payer-specific rules.

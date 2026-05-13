@@ -87,6 +87,10 @@ class BatchImportResult(BaseModel):
     errors: list[dict]  # [{row: int, field: str, message: str}]
 
 
+class RejectRequest(BaseModel):
+    reason: str
+
+
 class MissingInfoRequest(BaseModel):
     """When billing staff needs info from the provider."""
     message: str
@@ -239,7 +243,7 @@ async def route_to_billing(charge_id: UUID):
 
 
 @router.post("/charges/{charge_id}/reject")
-async def reject_charge(charge_id: UUID, reason: str):
+async def reject_charge(charge_id: UUID, body: RejectRequest):
     """Reject a charge entry (e.g., duplicate, unbillable). Notifies provider."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 

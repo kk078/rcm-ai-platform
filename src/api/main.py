@@ -7,6 +7,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import structlog
 import time
 import uuid
@@ -75,6 +78,44 @@ if settings.is_production:
 
 # Tenant Isolation (multi-tenant data scoping)
 app.add_middleware(TenantMiddleware)
+
+
+# ── Global Error Handlers ─────────────────────────────────────────────
+# These ensure the frontend ALWAYS receives {"detail": "human readable string"}
+# Never a raw array of Pydantic validation objects that would crash React.
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Convert FastAPI validation errors into clean human-readable strings."""
+    errors = exc.errors()
+    messages = []
+    for error in errors:
+        field = " → ".join(str(loc) for loc in error["loc"] if str(loc) != "body")
+        messages.append(f"{field}: {error['msg']}" if field else error["msg"])
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "; ".join(messages), "request_id": getattr(request.state, "request_id", "")},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Ensure all HTTP exceptions return clean JSON."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": str(exc.detail), "request_id": getattr(request.state, "request_id", "")},
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all handler to prevent unhandled exceptions from leaking stack traces."""
+    import traceback
+    logger.error("unhandled_error", error=str(exc), traceback=traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please try again.", "request_id": getattr(request.state, "request_id", "")},
+    )
 
 
 @app.middleware("http")

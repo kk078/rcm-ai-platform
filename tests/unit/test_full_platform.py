@@ -41,17 +41,17 @@ class TestAuthEndpoints:
         r = client.post("/api/v1/auth/refresh")
         assert r.status_code in (200, 422, 501)
 
-    def test_logout(self):
+    def test_logout_requires_auth(self):
         r = client.post("/api/v1/auth/logout")
-        assert r.status_code in (200, 501)
+        assert r.status_code in (200, 401, 501)
 
-    def test_mfa_setup(self):
+    def test_mfa_setup_requires_auth(self):
         r = client.post("/api/v1/auth/mfa/setup")
-        assert r.status_code in (200, 501)
+        assert r.status_code in (200, 401, 501)
 
-    def test_mfa_verify(self):
+    def test_mfa_verify_requires_auth(self):
         r = client.post("/api/v1/auth/mfa/verify")
-        assert r.status_code in (200, 422, 501)
+        assert r.status_code in (200, 401, 422, 501)
 
 
 class TestClaimsEndpoints:

@@ -60,6 +60,15 @@ class InvoiceResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class VoidInvoiceRequest(BaseModel):
+    reason: str
+
+
+class BatchInvoiceRequest(BaseModel):
+    billing_period_start: date
+    billing_period_end: date
+
+
 class InvoicePaymentRecord(BaseModel):
     paid_amount: float
     payment_method: str  # check, ach, credit_card, wire
@@ -113,10 +122,7 @@ async def generate_invoice(invoice: InvoiceCreate):
 
 
 @router.post("/invoices/generate-batch")
-async def generate_all_invoices(
-    billing_period_start: date,
-    billing_period_end: date,
-):
+async def generate_all_invoices(body: BatchInvoiceRequest):
     """
     Generate invoices for ALL active practices for a billing period.
     Returns a list of generated invoices for review before sending.
@@ -146,7 +152,7 @@ async def get_invoice(invoice_id: UUID):
 
 
 @router.patch("/invoices/{invoice_id}")
-async def update_invoice(invoice_id: UUID, updates: dict):
+async def update_invoice(invoice_id: UUID, updates: InvoiceCreate):
     """Edit a draft invoice before sending (add/remove line items, adjust amounts)."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
@@ -171,7 +177,7 @@ async def record_payment(invoice_id: UUID, payment: InvoicePaymentRecord):
 
 
 @router.post("/invoices/{invoice_id}/void")
-async def void_invoice(invoice_id: UUID, reason: str):
+async def void_invoice(invoice_id: UUID, body: VoidInvoiceRequest):
     """Void a sent invoice (e.g., billing error)."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { getErrorMessage } from '../lib/errorHandler';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -18,7 +19,7 @@ export function LoginPage() {
       await login({ email, password });
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Login failed. Please try again.');
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -37,7 +38,7 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit} className="rounded-xl bg-white p-6 shadow-sm border border-gray-200">
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
+            <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{typeof error === 'string' ? error : 'An error occurred'}</div>
           )}
 
           <div className="mb-4">

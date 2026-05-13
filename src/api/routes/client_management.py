@@ -147,6 +147,15 @@ class PortalUserCreate(BaseModel):
     provider_id: UUID | None = None  # If this user is a doctor
 
 
+class SuspendRequest(BaseModel):
+    reason: str
+
+
+class TerminateRequest(BaseModel):
+    reason: str
+    effective_date: date
+
+
 class OnboardingChecklist(BaseModel):
     practice_created: bool = False
     providers_added: bool = False
@@ -189,7 +198,7 @@ async def get_practice(practice_id: UUID):
 
 
 @router.patch("/practices/{practice_id}")
-async def update_practice(practice_id: UUID, updates: dict):
+async def update_practice(practice_id: UUID, updates: PracticeCreate):
     """Update practice configuration."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
@@ -205,13 +214,13 @@ async def activate_practice(practice_id: UUID):
 
 
 @router.post("/practices/{practice_id}/suspend")
-async def suspend_practice(practice_id: UUID, reason: str):
+async def suspend_practice(practice_id: UUID, body: SuspendRequest):
     """Suspend a practice (e.g., non-payment). Stops claim processing."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
 @router.post("/practices/{practice_id}/terminate")
-async def terminate_practice(practice_id: UUID, reason: str, effective_date: date):
+async def terminate_practice(practice_id: UUID, body: TerminateRequest):
     """Terminate a practice relationship. Triggers offboarding workflow."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
@@ -270,7 +279,7 @@ async def list_payer_enrollments(practice_id: UUID):
 
 
 @router.patch("/practices/{practice_id}/payer-enrollments/{enrollment_id}")
-async def update_payer_enrollment(practice_id: UUID, enrollment_id: UUID, updates: dict):
+async def update_payer_enrollment(practice_id: UUID, enrollment_id: UUID, updates: PayerEnrollmentCreate):
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
@@ -364,7 +373,7 @@ async def list_portal_users(practice_id: UUID):
 
 
 @router.patch("/practices/{practice_id}/portal-users/{user_id}")
-async def update_portal_user(practice_id: UUID, user_id: UUID, updates: dict):
+async def update_portal_user(practice_id: UUID, user_id: UUID, updates: PortalUserCreate):
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 

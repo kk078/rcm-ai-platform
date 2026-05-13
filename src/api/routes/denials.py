@@ -67,11 +67,23 @@ class AppealDraft(BaseModel):
     payer_appeal_requirements: dict
 
 
+class GenerateAppealRequest(BaseModel):
+    appeal_level: int = Field(default=1, ge=1, le=3)
+
+
 class AppealSubmission(BaseModel):
     letter_content: str  # Final (possibly edited) letter
     supporting_doc_ids: list[UUID]
     submission_method: str  # portal, fax, mail, edi
     notes: str | None = None
+
+
+class WriteOffRequest(BaseModel):
+    reason: str
+
+
+class AssignRequest(BaseModel):
+    user_id: UUID
 
 
 class DenialPatternResponse(BaseModel):
@@ -136,7 +148,7 @@ async def classify_denial(denial_id: UUID):
 
 
 @router.post("/{denial_id}/generate-appeal", response_model=AppealDraft)
-async def generate_appeal(denial_id: UUID, appeal_level: int = 1):
+async def generate_appeal(denial_id: UUID, body: GenerateAppealRequest | None = None):
     """
     Generate an AI-powered appeal letter:
     1. Gather claim, clinical docs, and coding context
@@ -162,13 +174,13 @@ async def submit_appeal(denial_id: UUID, submission: AppealSubmission):
 
 
 @router.post("/{denial_id}/write-off")
-async def write_off_denial(denial_id: UUID, reason: str):
+async def write_off_denial(denial_id: UUID, body: WriteOffRequest):
     """Write off a denial as uncollectable. Requires manager approval if over threshold."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
 
 @router.post("/{denial_id}/assign")
-async def assign_denial(denial_id: UUID, user_id: UUID):
+async def assign_denial(denial_id: UUID, body: AssignRequest):
     """Assign a denial to a specific analyst."""
     raise HTTPException(status_code=501, detail="Not yet implemented")
 
