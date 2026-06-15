@@ -186,6 +186,24 @@ export function OnboardingPage() {
             </div>
           </div>
 
+          {/* Auto-generated provider portal login */}
+          {result.provider_login && (
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <h2 className="font-semibold text-gray-900 mb-1">Provider portal login</h2>
+              {result.provider_login.temp_password ? (
+                <div className="text-sm text-gray-700">
+                  <p className="mb-2">Created automatically for this practice. Share with the client — they sign in at <code className="text-xs">rcm.aetherahealthcare.com/portal/</code> and must change the password on first login.</p>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 font-mono text-xs space-y-1">
+                    <div>Email: <span className="font-semibold">{result.provider_login.email}</span></div>
+                    <div>Temp password: <span className="font-semibold">{result.provider_login.temp_password}</span></div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">{result.provider_login.note} ({result.provider_login.email})</p>
+              )}
+            </section>
+          )}
+
           {/* Open-AR import */}
           <section className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="font-semibold text-gray-900 mb-1">Import open AR (optional)</h2>

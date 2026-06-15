@@ -27,9 +27,9 @@ const coreItems: NavItem[] = [
 ];
 
 const mgmtItems: NavItem[] = [
-  { to: '/clients',             label: 'Clients',            icon: Building2 },
-  { to: '/onboarding',          label: 'Onboard Provider',   icon: UserPlus },
-  { to: '/billing',             label: 'Billing',            icon: Receipt },
+  { to: '/clients',             label: 'Clients',            icon: Building2, adminOnly: true },
+  { to: '/onboarding',          label: 'Onboard Provider',   icon: UserPlus,  adminOnly: true },
+  { to: '/billing',             label: 'Billing',            icon: Receipt,   adminOnly: true },
   { to: '/provider-logins',     label: 'Provider Logins',    icon: KeyRound,  adminOnly: true },
   { to: '/ehr-connections',     label: 'EHR / PMS',          icon: Plug,      adminOnly: true },
   { to: '/agent-monitor',       label: 'AI Agents',          icon: Activity,  adminOnly: true },
@@ -48,7 +48,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const initials = user?.full_name ? getInitials(user.full_name) : '?';
-  const isAdmin = user?.internal_role === 'company_admin' || user?.internal_role === 'admin';
+  const isAdmin = user?.internal_role === 'company_admin';  // management = super admin (company_admin) only
 
   function NavSection({ label, items }: { label: string; items: NavItem[] }) {
     const visibleItems = items.filter((item) => !item.adminOnly || isAdmin);

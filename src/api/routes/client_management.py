@@ -25,6 +25,20 @@ from src.infrastructure.database.models import (
 )
 from src.api.schemas.common import PaginatedResponse
 from src.infrastructure.auth.middleware import get_current_user
+from src.core.rbac import require_super_admin
+from src.infrastructure.auth.service import AuthService
+
+_auth_service = AuthService()
+
+
+def _temp_password() -> str:
+    """Policy-compliant random temp password (>=10, has upper+lower+digit)."""
+    import secrets, string  # noqa: PLC0415
+    chars = string.ascii_letters + string.digits
+    while True:
+        pw = "".join(secrets.choice(chars) for _ in range(12))
+        if any(c.islower() for c in pw) and any(c.isupper() for c in pw) and any(c.isdigit() for c in pw):
+            return pw
 from src.core.client_management.service import (
     practice_service,
     provider_service,
@@ -215,7 +229,7 @@ class OnboardingChecklist(BaseModel):
 async def create_practice(
     practice: PracticeCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """
     Create a new practice client. Starts the onboarding process.
@@ -247,7 +261,7 @@ class GuidelinesUpdate(BaseModel):
 async def onboard_practice(
     body: OnboardRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """One-stop provider setup: create the practice plus its providers and payer
     enrollments in a single call. Each sub-step reuses the same service logic as the
@@ -255,10 +269,19 @@ async def onboard_practice(
     stand a provider up before sending charges."""
     uid = current_user["user_id"]
     providers_out, payers_out = [], []
+    provider_login = None
+    # De-duplicate providers by NPI within the request (never create the same provider twice).
+    seen_npi: set[str] = set()
+    uniq_providers = []
+    for p in body.providers:
+        if p.npi in seen_npi:
+            continue
+        seen_npi.add(p.npi)
+        uniq_providers.append(p)
     try:
         practice = await practice_service.create_practice(db=db, user_id=uid, data=body.practice)
         pid = getattr(practice, "id", None) or (practice.get("id") if isinstance(practice, dict) else None)
-        for p in body.providers:
+        for p in uniq_providers:
             providers_out.append(await provider_service.add_provider_to_practice(
                 db=db, user_id=uid, practice_id=pid, data=p))
         for pe in body.payers:
@@ -268,6 +291,25 @@ async def onboard_practice(
             _pr = (await db.execute(select(Practice).where(Practice.id == pid))).scalar_one_or_none()
             if _pr is not None:
                 _pr.billing_guidelines = body.billing_guidelines.strip()[:20000]
+
+        # Auto-generate a provider portal login for the new practice (practice_admin).
+        login_email = ((body.practice.contact_email or body.practice.email or "") or "").strip().lower()
+        if login_email and pid:
+            exists = (await db.execute(select(User).where(User.email == login_email))).scalar_one_or_none()
+            if exists is None:
+                temp_pw = _temp_password()
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                db.add(User(
+                    email=login_email, password_hash=_auth_service.hash_password(temp_pw),
+                    first_name=(body.practice.contact_name or body.practice.practice_name)[:100].strip() or "Practice",
+                    last_name="Admin", user_type="provider", provider_role="practice_admin",
+                    practice_id=pid, is_active=True, mfa_enabled=False, must_change_password=True,
+                    password_changed_at=now, created_at=now, updated_at=now))
+                provider_login = {"email": login_email, "temp_password": temp_pw,
+                                  "portal_url": "/portal/", "must_change_password": True}
+            else:
+                provider_login = {"email": login_email,
+                                  "note": "A login with this email already exists — not recreated."}
         await db.commit()
     except ClientManagementError as e:
         await db.rollback()
@@ -276,6 +318,7 @@ async def onboard_practice(
         "status": "onboarded", "practice_id": str(pid), "practice": practice,
         "providers_added": len(providers_out), "payers_enrolled": len(payers_out),
         "guidelines_set": bool(body.billing_guidelines),
+        "provider_login": provider_login,
     }
 
 
@@ -283,7 +326,7 @@ async def onboard_practice(
 async def get_guidelines(
     practice_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     pr = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
     if not pr:
@@ -296,7 +339,7 @@ async def set_guidelines(
     practice_id: UUID,
     body: GuidelinesUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Set/replace the client's billing guidelines — applied automatically to this
     practice's coding/billing/AR agent work."""
@@ -313,7 +356,7 @@ async def upload_client_info(
     practice_id: UUID,
     file: UploadFile = File(..., description="Client-info workbook (.xlsx) with a Billing Guidelines sheet"),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Parse a client-info workbook and store its Billing Guidelines sheet as the
     practice's guidelines (auto-applied to the agents)."""
@@ -352,7 +395,7 @@ async def list_practices(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """List all practices. Admins see all; managers see assigned only."""
     try:
@@ -381,7 +424,7 @@ async def list_practices(
 async def get_practice(
     practice_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Get practice details including onboarding status and KPIs."""
     try:
@@ -396,7 +439,7 @@ async def update_practice(
     practice_id: UUID,
     updates: PracticeCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Update practice configuration."""
     try:
@@ -415,7 +458,7 @@ async def update_practice(
 async def activate_practice(
     practice_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """
     Activate a practice after onboarding is complete.
@@ -438,7 +481,7 @@ async def suspend_practice(
     practice_id: UUID,
     body: SuspendRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Suspend a practice (e.g., non-payment). Stops claim processing."""
     try:
@@ -458,7 +501,7 @@ async def terminate_practice(
     practice_id: UUID,
     body: TerminateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Terminate a practice relationship. Triggers offboarding workflow."""
     try:
@@ -478,7 +521,7 @@ async def terminate_practice(
 async def reactivate_practice(
     practice_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Reactivate a suspended or terminated practice back to active status."""
     result = await db.execute(select(Practice).where(Practice.id == practice_id))
@@ -503,7 +546,7 @@ async def reactivate_practice(
 async def get_onboarding_status(
     practice_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Get the onboarding checklist status for a practice."""
     try:
@@ -520,7 +563,7 @@ async def add_location(
     practice_id: UUID,
     location: LocationCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Add a practice location/facility."""
     # Verify practice exists
@@ -552,7 +595,7 @@ async def list_locations(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     # Total count
     count_result = await db.execute(
@@ -579,7 +622,7 @@ async def add_provider(
     practice_id: UUID,
     provider: ProviderAdd,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """
     Add a provider to the practice.
@@ -603,7 +646,7 @@ async def list_practice_providers(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         providers = await provider_service.list_practice_providers(db=db, practice_id=practice_id)
@@ -626,7 +669,7 @@ async def add_payer_enrollment(
     practice_id: UUID,
     enrollment: PayerEnrollmentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """
     Configure a payer enrollment for a practice.
@@ -650,7 +693,7 @@ async def list_payer_enrollments(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         enrollments = await payer_enrollment_service.list_payer_enrollments(
@@ -674,7 +717,7 @@ async def update_payer_enrollment(
     enrollment_id: UUID,
     updates: PayerEnrollmentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         result = await payer_enrollment_service.update_payer_enrollment(
@@ -697,7 +740,7 @@ async def import_fee_schedule(
     payer_id: UUID,
     file: UploadFile = File(..., description="CSV or Excel fee schedule file"),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """
     Import a contracted fee schedule for a payer.
@@ -716,7 +759,7 @@ async def list_fee_schedules(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     # Get fee schedules through payer enrollments linked to this practice
     result = await db.execute(
@@ -756,7 +799,7 @@ async def get_fee_schedule_rates(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     from src.infrastructure.database.models import FeeScheduleRate
 
@@ -792,7 +835,7 @@ async def create_service_agreement(
     practice_id: UUID,
     agreement: ServiceAgreementCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Set the billing fee structure and SLA targets for this practice."""
     try:
@@ -811,7 +854,7 @@ async def create_service_agreement(
 async def get_service_agreement(
     practice_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         agreement = await service_agreement_service.get_active_agreement(
@@ -828,7 +871,7 @@ async def get_sla_compliance(
     period_start: date | None = None,
     period_end: date | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """
     Check SLA compliance for a practice over a period.
@@ -887,7 +930,7 @@ async def assign_staff(
     practice_id: UUID,
     assignment: StaffAssignmentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Assign an internal staff member to work on this practice."""
     try:
@@ -908,7 +951,7 @@ async def list_staff_assignments(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         assignments = await staff_assignment_service.list_staff_assignments(
@@ -931,7 +974,7 @@ async def remove_staff_assignment(
     practice_id: UUID,
     assignment_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         await staff_assignment_service.remove_assignment(
@@ -952,7 +995,7 @@ async def create_portal_user(
     practice_id: UUID,
     portal_user: PortalUserCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """
     Create a provider portal user for this practice.
@@ -976,7 +1019,7 @@ async def list_portal_users(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         users = await portal_user_service.list_portal_users(db=db, practice_id=practice_id)
@@ -998,7 +1041,7 @@ async def update_portal_user(
     user_id: UUID,
     updates: PortalUserCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         result = await portal_user_service.update_portal_user(
@@ -1018,7 +1061,7 @@ async def deactivate_portal_user(
     practice_id: UUID,
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     try:
         result = await portal_user_service.deactivate_portal_user(
@@ -1039,7 +1082,7 @@ async def import_patients(
     practice_id: UUID,
     file: UploadFile = File(..., description="CSV with patient demographics"),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Bulk import patient demographics during onboarding."""
     # Verify practice exists
@@ -1054,7 +1097,7 @@ async def import_open_ar(
     practice_id: UUID,
     file: UploadFile = File(..., description="CSV with open claims from previous biller"),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Import existing open AR (a PMS/EHR payer-claim-aging export) during transition
     from a previous biller. Each open line becomes a follow-up queue item the AR/denial
@@ -1080,7 +1123,7 @@ async def import_open_ar(
 @router.get("/dashboard")
 async def get_dashboard(
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Return dashboard summary for client management."""
     # Count active practices
