@@ -928,12 +928,23 @@ async def import_open_ar(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Import existing open AR during transition from previous biller."""
-    # Verify practice exists
+    """Import existing open AR (a PMS/EHR payer-claim-aging export) during transition
+    from a previous biller. Each open line becomes a follow-up queue item the AR/denial
+    agent can work, prioritized by aging bucket."""
     result = await db.execute(select(Practice).where(Practice.id == practice_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail=f"Practice {practice_id} not found")
-    return {"message": "Open AR import not yet available"}
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="Empty file.")
+    from src.core.ar_intake import service as ar_intake  # noqa: PLC0415
+    try:
+        summary = await ar_intake.import_open_ar(
+            db, practice_id=practice_id, data=data, added_by_id=current_user.get("user_id"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    await db.commit()
+    return {"status": "imported", "practice_id": str(practice_id), **summary}
 
 
 # ── Dashboard ───────────────────────────────────────────────────
