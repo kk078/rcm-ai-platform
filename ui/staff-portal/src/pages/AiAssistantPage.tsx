@@ -130,8 +130,16 @@ export function AiAssistantPage() {
       const fd = new FormData();
       fd.append('file', f);
       const { data } = await api.post('/knowledge/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const tagStr = data.tags?.length ? `, tags: ${data.tags.join(', ')}` : '';
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Stored "${data.title}" in the knowledge base (${(data.char_count||0).toLocaleString()} chars${tagStr}). I will use it in future answers.`, timestamp: new Date() }]);
+      let note: string;
+      if (data.kind === 'processing' || data.status === 'processing') {
+        note = `Got "${data.title}". I'm analyzing it in the background (large scanned PDFs can take a minute or two) — it'll be searchable by me and the agents once it finishes.`;
+      } else if (data.kind === 'patient_document') {
+        note = `Processed "${data.title}"${data.summary ? `: ${data.summary}` : '.'}`;
+      } else {
+        const tagStr = data.tags?.length ? `, tags: ${data.tags.join(', ')}` : '';
+        note = `Stored "${data.title}" in the knowledge base (${(data.char_count||0).toLocaleString()} chars${tagStr}). I will use it in future answers.`;
+      }
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: note, timestamp: new Date() }]);
     } catch (e: any) {
       const msg = e?.response?.data?.detail || 'Upload failed.';
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Upload error: ${msg}`, timestamp: new Date() }]);

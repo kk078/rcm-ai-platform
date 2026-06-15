@@ -317,10 +317,17 @@ def _ocr_image(data: bytes) -> str:
 
 def _ocr_pdf(data: bytes) -> str:
     try:
+        import os  # noqa: PLC0415
+        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
         import pytesseract  # noqa: PLC0415
         from pdf2image import convert_from_bytes  # noqa: PLC0415
-        pages = convert_from_bytes(data, dpi=200)
-        txt = "\n".join(pytesseract.image_to_string(img) for img in pages).strip()
+        # Lower DPI + parallel rasterization + concurrent per-page OCR. tesseract
+        # shells out (releases the GIL), so threads give real speedup; a multi-page
+        # scanned PDF that took minutes now finishes in a fraction of the time.
+        workers = min(8, max(2, os.cpu_count() or 4))
+        pages = convert_from_bytes(data, dpi=150, thread_count=workers)
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            txt = "\n".join(ex.map(pytesseract.image_to_string, pages)).strip()
     except Exception as e:  # noqa: BLE001  (tesseract/poppler missing, or render error)
         raise ValueError(f"Could not OCR the PDF: {e}")
     if not txt:

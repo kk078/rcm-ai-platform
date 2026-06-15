@@ -85,52 +85,34 @@ async def upload_reference(
     file: UploadFile = File(...),
     global_scope: bool = False,
     current_user: dict = Depends(require_super_admin),
-    db: AsyncSession = Depends(get_db),
 ):
-    """Upload a document. Patient PHI documents (eligibility/benefits, progress notes, fee
-    schedules, EHR exports, EOB/ERA) are routed to the patient-document intake pipeline
-    (operational tables). Everything else is stored as reference material in the knowledge base."""
-    from src.core.document_intake import service as di  # noqa: PLC0415
+    """Upload a document. The heavy work (OCR of scanned PDFs, classification, storage)
+    runs in a background worker, so large documents never hit the gateway timeout.
+    PHI documents (eligibility/benefits, progress notes, fee schedules, EHR exports,
+    EOB/ERA) route to the operational tables; everything else to the knowledge base."""
+    import base64 as _b64  # noqa: PLC0415
     data = await file.read()
     if not data:
         raise HTTPException(status_code=422, detail="Empty file.")
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (max 15 MB).")
     fname = file.filename or "upload"
+    from src.core.document_intake.tasks import ingest_document  # noqa: PLC0415
+    pid = current_user.get("practice_id")
+    uid = current_user.get("user_id")
     try:
-        text = kb.extract_text_from_file(fname, data)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        task = ingest_document.delay(
+            file_b64=_b64.b64encode(data).decode("ascii"), filename=fname,
+            practice_id=str(pid) if pid else None,
+            added_by_id=str(uid) if uid else None, global_scope=bool(global_scope))
     except Exception as e:
-        logger.warning("knowledge_upload_extract_failed", filename=fname, error=str(e))
-        raise HTTPException(status_code=502, detail=f"Could not read the file: {e}")
+        logger.warning("knowledge_upload_enqueue_failed", filename=fname, error=str(e))
+        raise HTTPException(status_code=503, detail=f"Could not queue the document: {e}")
+    return {"kind": "processing", "status": "processing", "title": fname,
+            "task_id": task.id, "char_count": 0, "tags": [],
+            "summary": ("Uploading and analyzing in the background. It will be searchable "
+                        "by the assistant and the agents shortly.")}
 
-    parsed = await di.classify_and_extract(text)
-    PATIENT_TYPES = {"eligibility_benefits", "progress_note", "fee_schedule", "ehr_export", "eob_era"}
-    try:
-        if parsed.get("doc_type") in PATIENT_TYPES:
-            res = await di.ingest_patient_document(
-                db, practice_id=current_user.get("practice_id"), filename=fname,
-                added_by_id=current_user.get("user_id"), text=text, parsed=parsed)
-            await db.commit()
-            tags = [parsed.get("doc_type")] + (["duplicate"] if res.get("duplicate") else [])
-            summ = res.get("message") or res.get("summary") or ""
-            if res.get("eligibility_check_id"):
-                summ = (summ + " Created an eligibility/benefits record linked to the patient.").strip()
-            return {"kind": "patient_document", "title": fname, "char_count": len(text),
-                    "tags": tags, "summary": summ, **res}
-        ref = await kb.ingest_text(db, practice_id=_practice(current_user, global_scope),
-                                   title=fname, content=text, added_by_id=current_user.get("user_id"))
-        await db.commit()
-        return {"kind": "reference", "title": ref.title, "char_count": ref.char_count,
-                "tags": ref.tags, "summary": ref.summary}
-    except HTTPException:
-        raise
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        logger.warning("knowledge_upload_failed", filename=fname, error=str(e))
-        raise HTTPException(status_code=502, detail=f"Could not ingest the file: {e}")
 
 @router.get("/", response_model=list[ReferenceResponse])
 async def list_references(

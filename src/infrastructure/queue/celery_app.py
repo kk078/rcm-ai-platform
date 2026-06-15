@@ -102,4 +102,5 @@ celery_app.autodiscover_tasks([
     "src.services.edi",
     "src.core.error_intelligence",  # AI auto-debugging
     "src.core.ai_dispatch",         # Autonomous AI queue processing
+    "src.core.document_intake",     # Background upload ingestion (OCR + classify)
 ])
