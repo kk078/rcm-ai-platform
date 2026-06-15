@@ -10,11 +10,15 @@ export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
+  must_change_password: boolean;
   user: {
     id: string;
     email: string;
     full_name: string;
+    first_name?: string;
+    last_name?: string;
     internal_role: string;
+    mfa_enabled?: boolean;
     assigned_practices: string[];
   };
 }
@@ -23,8 +27,12 @@ export interface UserProfile {
   id: string;
   email: string;
   full_name: string;
+  first_name?: string;
+  last_name?: string;
   internal_role: string;
+  mfa_enabled?: boolean;
   assigned_practices: string[];
+  must_change_password: boolean;
 }
 
 export async function login(payload: LoginRequest): Promise<LoginResponse> {
@@ -39,24 +47,20 @@ export async function refreshToken(): Promise<string> {
   if (!refresh) throw new Error('No refresh token');
   const { data } = await api.post('/auth/refresh', { refresh_token: refresh });
   localStorage.setItem('staff_access_token', data.access_token);
-  localStorage.setItem('staff_refresh_token', data.refresh_token);
   return data.access_token;
 }
 
 export function logout(): void {
   localStorage.removeItem('staff_access_token');
   localStorage.removeItem('staff_refresh_token');
+  localStorage.removeItem('staff_user');
   window.location.href = '/login';
 }
 
 export function getStoredUser(): UserProfile | null {
   const raw = localStorage.getItem('staff_user');
   if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(raw); } catch { return null; }
 }
 
 export function storeUser(user: UserProfile): void {

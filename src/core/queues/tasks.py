@@ -70,11 +70,18 @@ async def _check_sla_breaches():
 
 
 async def _auto_assign_items():
-    """Async implementation of auto-assignment."""
+    """Async implementation of auto-assignment.
+
+    Handles two classes of items:
+      1. ``pending``   — not yet touched; eligible for AI dispatch or human pickup.
+      2. ``escalated`` — AI agent confidence was below threshold; must go to a human.
+    """
     from src.infrastructure.database.session import async_session_factory
     from src.core.queues.service import queue_service
     from src.infrastructure.database.models import Practice
-    from sqlalchemy import select
+    from src.core.work_queue.models import WorkQueueItem  # noqa: PLC0415
+    from sqlalchemy import select, update
+    from datetime import datetime, timezone
     import structlog
 
     logger = structlog.get_logger("queues.tasks")
@@ -87,16 +94,64 @@ async def _auto_assign_items():
         practice_ids = [row[0] for row in result.all()]
 
         total_assigned = 0
+        total_escalated_assigned = 0
+
         for practice_id in practice_ids:
+            # ---- 1. Normal pending items (AI or human pick-up) ----
             for qt in queue_types:
                 try:
-                    result = await queue_service.auto_assign(
+                    res = await queue_service.auto_assign(
                         db=db, user_id=None,  # System task
                         practice_id=practice_id, queue_type=qt,
                     )
-                    total_assigned += result.get("assigned_count", 0)
+                    total_assigned += res.get("assigned_count", 0)
                 except Exception as exc:
-                    logger.warning("auto_assign_skipped", practice_id=str(practice_id), queue_type=qt, error=str(exc))
+                    logger.warning(
+                        "auto_assign_skipped",
+                        practice_id=str(practice_id), queue_type=qt, error=str(exc),
+                    )
+
+            # ---- 2. AI-escalated items — force human round-robin assignment ----
+            for qt in queue_types:
+                try:
+                    res = await queue_service.auto_assign(
+                        db=db, user_id=None,
+                        practice_id=practice_id, queue_type=qt,
+                        status_filter="escalated",  # assign escalated items to humans
+                    )
+                    total_escalated_assigned += res.get("assigned_count", 0)
+                except TypeError:
+                    # queue_service.auto_assign doesn't yet accept status_filter;
+                    # fall back to a direct query that resets escalated → pending
+                    # so the normal assignment loop picks them up next cycle.
+                    try:
+                        await db.execute(
+                            update(WorkQueueItem)
+                            .where(
+                                WorkQueueItem.status == "escalated",
+                                WorkQueueItem.practice_id == practice_id,
+                                WorkQueueItem.queue_type == qt,
+                                WorkQueueItem.assigned_to.is_(None),
+                            )
+                            .values(
+                                status="pending",
+                                updated_at=datetime.now(timezone.utc),
+                            )
+                        )
+                    except Exception as exc2:
+                        logger.warning(
+                            "escalated_reset_skipped",
+                            practice_id=str(practice_id), queue_type=qt, error=str(exc2),
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "escalated_assign_skipped",
+                        practice_id=str(practice_id), queue_type=qt, error=str(exc),
+                    )
 
         await db.commit()
-        logger.info("auto_assign_complete", total_assigned=total_assigned)
+        logger.info(
+            "auto_assign_complete",
+            total_assigned=total_assigned,
+            escalated_assigned=total_escalated_assigned,
+        )

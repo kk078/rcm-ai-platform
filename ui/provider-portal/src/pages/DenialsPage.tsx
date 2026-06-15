@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Search } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse, safeNumber } from '../lib/apiHelpers';
 
 interface Denial {
   id: string;
@@ -14,29 +15,24 @@ interface Denial {
   days_remaining: number | null;
 }
 
-interface DenialsResponse {
-  items: Denial[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
 export function DenialsPage() {
   const [search, setSearch] = useState('');
 
-  const { data, isLoading } = useQuery<DenialsResponse>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['provider-denials'],
     queryFn: () =>
       api
-        .get('/portal/denials/', { params: { page_size: 20 } })
+        .get('/portal/denials', { params: { page_size: 20 } })
         .then((r) => r.data),
   });
 
-  const filtered = data?.items.filter(
+  const data = normalizeListResponse<Denial>(rawData);
+
+  const filtered = data.items.filter(
     (d) =>
       !search ||
-      d.claim_number.toLowerCase().includes(search.toLowerCase()) ||
-      d.denial_code.toLowerCase().includes(search.toLowerCase()),
+      (d.claim_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (d.denial_code ?? '').toLowerCase().includes(search.toLowerCase()),
   );
 
   const statusBadge = (s: string) => {
@@ -54,7 +50,7 @@ export function DenialsPage() {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Denials</h1>
-        <p className="mt-1 text-sm text-gray-500">{data?.total ?? 0} denials requiring attention</p>
+        <p className="mt-1 text-sm text-gray-500">{data.total} denials requiring attention</p>
       </div>
 
       <div className="mb-4">
@@ -78,24 +74,24 @@ export function DenialsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered?.map((denial) => (
+          {filtered.map((denial) => (
             <div key={denial.id} className="rounded-xl border border-gray-200 bg-white p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900">{denial.claim_number}</span>
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(denial.appeal_status)}`}>
-                      {denial.appeal_status.replace('_', ' ')}
+                    <span className="font-medium text-gray-900">{denial.claim_number ?? '—'}</span>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(denial.appeal_status ?? '')}`}>
+                      {(denial.appeal_status ?? '').replace('_', ' ')}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-gray-600">{denial.patient_name}</p>
+                  <p className="mt-1 text-sm text-gray-600">{denial.patient_name ?? '—'}</p>
                   <p className="text-sm text-gray-500">
-                    Code: {denial.denial_code} · {denial.denial_reason}
+                    Code: {denial.denial_code ?? '—'} · {denial.denial_reason ?? ''}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-semibold text-red-600">${denial.amount_denied.toLocaleString()}</p>
-                  {denial.days_remaining !== null && (
+                  <p className="text-lg font-semibold text-red-600">${safeNumber(denial.amount_denied).toLocaleString()}</p>
+                  {denial.days_remaining != null && (
                     <p className={`text-sm ${denial.days_remaining <= 5 ? 'font-semibold text-red-600' : 'text-gray-500'}`}>
                       {denial.days_remaining}d to appeal
                     </p>
@@ -104,7 +100,7 @@ export function DenialsPage() {
               </div>
             </div>
           ))}
-          {(!filtered?.length) && (
+          {filtered.length === 0 && (
             <div className="py-12 text-center text-sm text-gray-500">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-gray-300" />
               No denials found

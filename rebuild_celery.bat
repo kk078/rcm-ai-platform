@@ -1,0 +1,9 @@
+@echo off
+echo [1/3] Rebuilding celery-worker and celery-beat images (bakes fixed source into image)...
+docker compose build celery-worker celery-beat
+echo.
+echo [2/3] Bringing up rebuilt containers...
+docker compose up -d celery-worker celery-beat
+echo.
+echo [3/3] Tailing celery-worker logs (Ctrl+C to stop)...
+docker compose logs celery-worker --tail=30 --follow

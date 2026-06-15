@@ -9,6 +9,7 @@ export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
+  must_change_password: boolean;
   user: {
     id: string;
     email: string;
@@ -26,6 +27,10 @@ export interface ProviderProfile {
   provider_role: string;
   practice_id: string;
   practice_name: string;
+  must_change_password?: boolean;
+  first_name?: string;
+  last_name?: string;
+  mfa_enabled?: boolean;
 }
 
 export async function login(payload: LoginRequest): Promise<LoginResponse> {
@@ -47,7 +52,7 @@ export async function refreshToken(): Promise<string> {
 export function logout(): void {
   localStorage.removeItem('provider_access_token');
   localStorage.removeItem('provider_refresh_token');
-  window.location.href = '/login';
+  window.location.href = '/portal/login';
 }
 
 export function getStoredUser(): ProviderProfile | null {

@@ -9,6 +9,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    // Don't attempt to delete existing dist files before writing —
+    // avoids EPERM on Windows NTFS volume mounts in Docker/WSL.
+    emptyOutDir: false,
+  },
   server: {
     port: 3000,
     proxy: {

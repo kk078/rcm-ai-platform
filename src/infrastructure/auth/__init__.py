@@ -1,4 +1,4 @@
-"""Authentication and security infrastructure for MedClaim AI."""
+"""Authentication and security infrastructure for Aethera AI."""
 
 from src.infrastructure.auth.encryption import PHIEncryptor, EncryptedString, get_encryptor
 from src.infrastructure.auth.jwt_handler import (

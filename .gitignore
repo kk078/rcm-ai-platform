@@ -18,3 +18,6 @@ htmlcov/
 .pytest_cache/
 .ruff_cache/
 .env.prod
+
+# Local deploy secret (Cloudflare token)
+deploy-secrets.bat

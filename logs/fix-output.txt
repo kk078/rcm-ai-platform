@@ -1,0 +1,295 @@
+
+============================================================
+[2026-05-27 10:21:06] === Aethera Fix+Verify Run ===
+[2026-05-27 10:21:06] --- Current prod stack status ---
+[2026-05-27 10:21:07] time="2026-05-27T10:21:07+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:21:07] NAME                              IMAGE                           COMMAND                  SERVICE         CREATED       STATUS                   PORTS
+[2026-05-27 10:21:07] rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.maGǪ"   api             4 hours ago   Up 7 minutes (healthy)   8000/tcp
+[2026-05-27 10:21:07] rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infraGǪ"   celery-beat     4 hours ago   Up 4 hours (healthy)     8000/tcp
+[2026-05-27 10:21:07] rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infraGǪ"   celery-worker   4 hours ago   Up 4 hours (healthy)     8000/tcp
+[2026-05-27 10:21:07] rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-entGǪ"   minio           4 hours ago   Up 4 hours (healthy)     9000/tcp
+[2026-05-27 10:21:07] rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.sGǪ"   postgres        4 hours ago   Up 4 hours (healthy)     5432/tcp
+[2026-05-27 10:21:07] rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          4 hours ago   Up 4 hours (unhealthy)   6333-6334/tcp
+[2026-05-27 10:21:07] rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.sGǪ"   redis           4 hours ago   Up 4 hours (healthy)     6379/tcp
+[2026-05-27 10:21:07] --- Bringing up prod stack ---
+[2026-05-27 10:21:16] time="2026-05-27T10:21:07+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:21:16]  Container rcm-ai-platform-postgres-1 Running 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-minio-1 Running 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-redis-1 Running 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-celery-worker-1 Running 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-celery-beat-1 Running 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-qdrant-1 Recreate 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-qdrant-1 Recreated 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-api-1 Running 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-qdrant-1 Starting 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:21:16]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-ai-agents-1 Starting 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-qdrant-1 Started 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-qdrant-1 Waiting 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-minio-1 Waiting 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-minio-1 Healthy 
+[2026-05-27 10:21:17]  Container rcm-ai-platform-qdrant-1 Healthy 
+[2026-05-27 10:21:17] Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "gunicorn": executable file not found in $PATH
+[2026-05-27 10:21:17] --- Waiting 60s for healthchecks to settle ---
+[2026-05-27 10:22:17] --- Final prod stack status ---
+[2026-05-27 10:22:17] time="2026-05-27T10:22:17+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:22:17] NAME                              IMAGE                           COMMAND                  SERVICE         CREATED              STATUS                        PORTS
+[2026-05-27 10:22:17] rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.maGǪ"   api             4 hours ago          Up 8 minutes (healthy)        8000/tcp
+[2026-05-27 10:22:17] rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infraGǪ"   celery-beat     4 hours ago          Up 4 hours (healthy)          8000/tcp
+[2026-05-27 10:22:17] rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infraGǪ"   celery-worker   4 hours ago          Up 4 hours (healthy)          8000/tcp
+[2026-05-27 10:22:17] rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-entGǪ"   minio           4 hours ago          Up 4 hours (healthy)          9000/tcp
+[2026-05-27 10:22:17] rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.sGǪ"   postgres        4 hours ago          Up 4 hours (healthy)          5432/tcp
+[2026-05-27 10:22:17] rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          About a minute ago   Up About a minute (healthy)   6333-6334/tcp
+[2026-05-27 10:22:17] rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.sGǪ"   redis           4 hours ago          Up 4 hours (healthy)          6379/tcp
+[2026-05-27 10:22:17] Healthy services: 7  |  Unhealthy/Error: 0
+[2026-05-27 10:22:17] --- Bringing up workers stack ---
+[2026-05-27 10:22:19] time="2026-05-27T10:22:18+05:30" level=warning msg="The \"OLLAMA_API_KEY\" variable is not set. Defaulting to a blank string."
+[2026-05-27 10:22:19] time="2026-05-27T10:22:18+05:30" level=warning msg="D:\\AIAgents\\workers\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:22:19]  Container workers-db-1 Running 
+[2026-05-27 10:22:19]  Container workers-redis-1 Running 
+[2026-05-27 10:22:19]  Container workers-db-1 Waiting 
+[2026-05-27 10:22:19]  Container workers-redis-1 Waiting 
+[2026-05-27 10:22:19]  Container workers-redis-1 Waiting 
+[2026-05-27 10:22:19]  Container workers-db-1 Waiting 
+[2026-05-27 10:22:19]  Container workers-db-1 Healthy 
+[2026-05-27 10:22:19]  Container workers-db-1 Healthy 
+[2026-05-27 10:22:19]  Container workers-redis-1 Healthy 
+[2026-05-27 10:22:19]  Container workers-beat-1 Starting 
+[2026-05-27 10:22:19]  Container workers-redis-1 Healthy 
+[2026-05-27 10:22:19]  Container workers-worker-1 Starting 
+[2026-05-27 10:22:19]  Container workers-worker-1 Started 
+[2026-05-27 10:22:19] Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "celery": executable file not found in $PATH
+[2026-05-27 10:22:50] time="2026-05-27T10:22:50+05:30" level=warning msg="The \"OLLAMA_API_KEY\" variable is not set. Defaulting to a blank string."
+[2026-05-27 10:22:50] time="2026-05-27T10:22:50+05:30" level=warning msg="D:\\AIAgents\\workers\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:22:50] NAME               IMAGE                COMMAND                  SERVICE   CREATED       STATUS                            PORTS
+[2026-05-27 10:22:50] workers-db-1       postgres:15-alpine   "docker-entrypoint.sGǪ"   db        3 hours ago   Up 3 hours (healthy)              5432/tcp
+[2026-05-27 10:22:50] workers-redis-1    redis:7-alpine       "docker-entrypoint.sGǪ"   redis     3 hours ago   Up 3 hours (healthy)              0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+[2026-05-27 10:22:50] workers-worker-1   workers-worker       "bash -c 'sleep 5 &&GǪ"   worker    3 hours ago   Up 5 seconds (health: starting)   
+[2026-05-27 10:22:50] --- Registering AetheraWatchdog scheduled task ---
+[2026-05-27 10:22:51] The script 'register-startup-task.ps1' cannot be run because it contains a "#requires" statement for running as 
+[2026-05-27 10:22:51] Administrator. The current Windows PowerShell session is not running as Administrator. Start Windows PowerShell by  
+[2026-05-27 10:22:51] using the Run as Administrator option, and then try running the script again.
+[2026-05-27 10:22:51]     + CategoryInfo          : PermissionDenied: (register-startup-task.ps1:String) [], ParentContainsErrorRecordExcept 
+[2026-05-27 10:22:51]    ion
+[2026-05-27 10:22:51]     + FullyQualifiedErrorId : ScriptRequiresElevation
+[2026-05-27 10:22:51]  
+[2026-05-27 10:22:51] --- Watchdog task status ---
+[2026-05-27 10:22:54] WARNING: AetheraWatchdog task NOT found - manual registration required
+[2026-05-27 10:22:54] === Done. Review output above. ===
+============================================================
+
+============================================================
+[2026-05-27 10:32:22] === Aethera Fix+Verify Run ===
+[2026-05-27 10:32:22] --- Current prod stack status ---
+[2026-05-27 10:32:23] time="2026-05-27T10:32:23+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:32:23] NAME                              IMAGE                           COMMAND                  SERVICE         CREATED          STATUS                    PORTS
+[2026-05-27 10:32:23] rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.maGǪ"   api             4 hours ago      Up 19 minutes (healthy)   8000/tcp
+[2026-05-27 10:32:23] rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infraGǪ"   celery-beat     4 hours ago      Up 4 hours (healthy)      8000/tcp
+[2026-05-27 10:32:23] rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infraGǪ"   celery-worker   4 hours ago      Up 4 hours (healthy)      8000/tcp
+[2026-05-27 10:32:23] rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-entGǪ"   minio           4 hours ago      Up 4 hours (healthy)      9000/tcp
+[2026-05-27 10:32:23] rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.sGǪ"   postgres        4 hours ago      Up 4 hours (healthy)      5432/tcp
+[2026-05-27 10:32:23] rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          11 minutes ago   Up 11 minutes (healthy)   6333-6334/tcp
+[2026-05-27 10:32:23] rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.sGǪ"   redis           4 hours ago      Up 4 hours (healthy)      6379/tcp
+[2026-05-27 10:32:23] --- Bringing up prod stack ---
+[2026-05-27 10:32:25] time="2026-05-27T10:32:23+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:32:25]  Container rcm-ai-platform-qdrant-1 Running 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-postgres-1 Running 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-redis-1 Running 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-minio-1 Running 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-api-1 Running 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-celery-beat-1 Running 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-celery-worker-1 Running 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-qdrant-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-minio-1 Waiting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-ai-agents-1 Starting 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-minio-1 Healthy 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:32:25]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-qdrant-1 Healthy 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-api-1 Waiting 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-api-1 Healthy 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-nginx-1 Starting 
+[2026-05-27 10:32:26]  Container rcm-ai-platform-nginx-1 Started 
+[2026-05-27 10:32:26] Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "gunicorn": executable file not found in $PATH
+[2026-05-27 10:32:26] --- Waiting 60s for healthchecks to settle ---
+[2026-05-27 10:33:26] --- Final prod stack status ---
+[2026-05-27 10:33:26] time="2026-05-27T10:33:26+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:33:26] NAME                              IMAGE                           COMMAND                  SERVICE         CREATED          STATUS                         PORTS
+[2026-05-27 10:33:26] rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.maGǪ"   api             4 hours ago      Up 20 minutes (healthy)        8000/tcp
+[2026-05-27 10:33:26] rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infraGǪ"   celery-beat     4 hours ago      Up 4 hours (healthy)           8000/tcp
+[2026-05-27 10:33:26] rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infraGǪ"   celery-worker   4 hours ago      Up 4 hours (healthy)           8000/tcp
+[2026-05-27 10:33:26] rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-entGǪ"   minio           4 hours ago      Up 4 hours (healthy)           9000/tcp
+[2026-05-27 10:33:26] rcm-ai-platform-nginx-1           rcm-ai-platform-nginx           "/docker-entrypoint.GǪ"   nginx           4 hours ago      Restarting (1) 5 seconds ago   
+[2026-05-27 10:33:26] rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.sGǪ"   postgres        4 hours ago      Up 4 hours (healthy)           5432/tcp
+[2026-05-27 10:33:26] rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          12 minutes ago   Up 12 minutes (healthy)        6333-6334/tcp
+[2026-05-27 10:33:26] rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.sGǪ"   redis           4 hours ago      Up 4 hours (healthy)           6379/tcp
+[2026-05-27 10:33:26] Healthy services: 7  |  Unhealthy/Error: 0
+[2026-05-27 10:33:26] --- Bringing up workers stack ---
+[2026-05-27 10:33:28] time="2026-05-27T10:33:27+05:30" level=warning msg="The \"OLLAMA_API_KEY\" variable is not set. Defaulting to a blank string."
+[2026-05-27 10:33:28] time="2026-05-27T10:33:27+05:30" level=warning msg="D:\\AIAgents\\workers\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:33:28]  Container workers-redis-1 Running 
+[2026-05-27 10:33:28]  Container workers-db-1 Running 
+[2026-05-27 10:33:28]  Container workers-redis-1 Waiting 
+[2026-05-27 10:33:28]  Container workers-db-1 Waiting 
+[2026-05-27 10:33:28]  Container workers-db-1 Waiting 
+[2026-05-27 10:33:28]  Container workers-redis-1 Waiting 
+[2026-05-27 10:33:28]  Container workers-redis-1 Healthy 
+[2026-05-27 10:33:28]  Container workers-db-1 Healthy 
+[2026-05-27 10:33:28]  Container workers-worker-1 Starting 
+[2026-05-27 10:33:28]  Container workers-db-1 Healthy 
+[2026-05-27 10:33:28]  Container workers-redis-1 Healthy 
+[2026-05-27 10:33:28]  Container workers-beat-1 Starting 
+[2026-05-27 10:33:28]  Container workers-worker-1 Started 
+[2026-05-27 10:33:28] Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "celery": executable file not found in $PATH
+[2026-05-27 10:33:59] time="2026-05-27T10:33:59+05:30" level=warning msg="The \"OLLAMA_API_KEY\" variable is not set. Defaulting to a blank string."
+[2026-05-27 10:33:59] time="2026-05-27T10:33:59+05:30" level=warning msg="D:\\AIAgents\\workers\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:33:59] NAME               IMAGE                COMMAND                  SERVICE   CREATED       STATUS                            PORTS
+[2026-05-27 10:33:59] workers-db-1       postgres:15-alpine   "docker-entrypoint.sGǪ"   db        3 hours ago   Up 3 hours (healthy)              5432/tcp
+[2026-05-27 10:33:59] workers-redis-1    redis:7-alpine       "docker-entrypoint.sGǪ"   redis     3 hours ago   Up 3 hours (healthy)              0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+[2026-05-27 10:33:59] workers-worker-1   workers-worker       "bash -c 'sleep 5 &&GǪ"   worker    3 hours ago   Restarting (127) 13 seconds ago   
+[2026-05-27 10:33:59] --- Registering AetheraWatchdog scheduled task ---
+[2026-05-27 10:33:59] At D:\rcm-ai-platform\scripts\register-startup-task.ps1:95 char:58
+[2026-05-27 10:33:59] + Write-Host "    Start-ScheduledTask -TaskName '$TASK_NAME'"
+[2026-05-27 10:33:59] +                                                          ~~
+[2026-05-27 10:33:59] The string is missing the terminator: '.
+[2026-05-27 10:33:59]     + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+[2026-05-27 10:33:59]     + FullyQualifiedErrorId : TerminatorExpectedAtEndOfString
+[2026-05-27 10:33:59]  
+[2026-05-27 10:33:59] --- Watchdog task status ---
+[2026-05-27 10:34:02] WARNING: AetheraWatchdog task NOT found - manual registration required
+[2026-05-27 10:34:02] === Done. Review output above. ===
+============================================================
+
+============================================================
+[2026-05-27 10:41:43] === Aethera Fix+Verify Run ===
+[2026-05-27 10:41:43] --- Current prod stack status ---
+[2026-05-27 10:41:44] time="2026-05-27T10:41:43+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:41:44] NAME                              IMAGE                           COMMAND                  SERVICE         CREATED          STATUS                         PORTS
+[2026-05-27 10:41:44] rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.maGǪ"   api             4 hours ago      Up 28 minutes (healthy)        8000/tcp
+[2026-05-27 10:41:44] rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infraGǪ"   celery-beat     4 hours ago      Up 4 hours (healthy)           8000/tcp
+[2026-05-27 10:41:44] rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infraGǪ"   celery-worker   4 hours ago      Up 4 hours (healthy)           8000/tcp
+[2026-05-27 10:41:44] rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-entGǪ"   minio           4 hours ago      Up 4 hours (healthy)           9000/tcp
+[2026-05-27 10:41:44] rcm-ai-platform-nginx-1           rcm-ai-platform-nginx           "/docker-entrypoint.GǪ"   nginx           4 hours ago      Restarting (1) 4 seconds ago   
+[2026-05-27 10:41:44] rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.sGǪ"   postgres        4 hours ago      Up 4 hours (healthy)           5432/tcp
+[2026-05-27 10:41:44] rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          20 minutes ago   Up 20 minutes (healthy)        6333-6334/tcp
+[2026-05-27 10:41:44] rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.sGǪ"   redis           4 hours ago      Up 4 hours (healthy)           6379/tcp
+[2026-05-27 10:41:44] --- Bringing up prod stack ---
+[2026-05-27 10:41:46] time="2026-05-27T10:41:44+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:41:46]  Container rcm-ai-platform-minio-1 Running 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-qdrant-1 Running 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-redis-1 Running 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-postgres-1 Running 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-api-1 Running 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-celery-worker-1 Running 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-celery-beat-1 Running 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-qdrant-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-minio-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-redis-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-postgres-1 Waiting 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:41:46]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-redis-1 Healthy 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-ai-agents-1 Starting 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-minio-1 Healthy 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-qdrant-1 Healthy 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-postgres-1 Healthy 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-api-1 Waiting 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-api-1 Healthy 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-nginx-1 Starting 
+[2026-05-27 10:41:47]  Container rcm-ai-platform-nginx-1 Started 
+[2026-05-27 10:41:47] Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "gunicorn": executable file not found in $PATH
+[2026-05-27 10:41:47] --- Waiting 60s for healthchecks to settle ---
+[2026-05-27 10:42:47] --- Final prod stack status ---
+[2026-05-27 10:42:48] time="2026-05-27T10:42:47+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:42:48] NAME                              IMAGE                           COMMAND                  SERVICE         CREATED          STATUS                         PORTS
+[2026-05-27 10:42:48] rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.maGǪ"   api             4 hours ago      Up 29 minutes (healthy)        8000/tcp
+[2026-05-27 10:42:48] rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infraGǪ"   celery-beat     4 hours ago      Up 4 hours (healthy)           8000/tcp
+[2026-05-27 10:42:48] rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infraGǪ"   celery-worker   4 hours ago      Up 4 hours (healthy)           8000/tcp
+[2026-05-27 10:42:48] rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-entGǪ"   minio           4 hours ago      Up 4 hours (healthy)           9000/tcp
+[2026-05-27 10:42:48] rcm-ai-platform-nginx-1           rcm-ai-platform-nginx           "/docker-entrypoint.GǪ"   nginx           4 hours ago      Restarting (1) 3 seconds ago   
+[2026-05-27 10:42:48] rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.sGǪ"   postgres        4 hours ago      Up 4 hours (healthy)           5432/tcp
+[2026-05-27 10:42:48] rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          21 minutes ago   Up 21 minutes (healthy)        6333-6334/tcp
+[2026-05-27 10:42:48] rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.sGǪ"   redis           4 hours ago      Up 4 hours (healthy)           6379/tcp
+[2026-05-27 10:42:48] Healthy services: 7  |  Unhealthy/Error: 0
+[2026-05-27 10:42:48] --- Bringing up workers stack ---
+[2026-05-27 10:42:50] time="2026-05-27T10:42:49+05:30" level=warning msg="The \"OLLAMA_API_KEY\" variable is not set. Defaulting to a blank string."
+[2026-05-27 10:42:50] time="2026-05-27T10:42:49+05:30" level=warning msg="D:\\AIAgents\\workers\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:42:50]  Container workers-redis-1 Running 
+[2026-05-27 10:42:50]  Container workers-db-1 Running 
+[2026-05-27 10:42:50]  Container workers-redis-1 Waiting 
+[2026-05-27 10:42:50]  Container workers-db-1 Waiting 
+[2026-05-27 10:42:50]  Container workers-db-1 Waiting 
+[2026-05-27 10:42:50]  Container workers-redis-1 Waiting 
+[2026-05-27 10:42:50]  Container workers-db-1 Healthy 
+[2026-05-27 10:42:50]  Container workers-db-1 Healthy 
+[2026-05-27 10:42:50]  Container workers-redis-1 Healthy 
+[2026-05-27 10:42:50]  Container workers-beat-1 Starting 
+[2026-05-27 10:42:50]  Container workers-redis-1 Healthy 
+[2026-05-27 10:42:50]  Container workers-worker-1 Starting 
+[2026-05-27 10:42:50]  Container workers-worker-1 Started 
+[2026-05-27 10:42:50] Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "celery": executable file not found in $PATH
+[2026-05-27 10:43:21] time="2026-05-27T10:43:21+05:30" level=warning msg="The \"OLLAMA_API_KEY\" variable is not set. Defaulting to a blank string."
+[2026-05-27 10:43:21] time="2026-05-27T10:43:21+05:30" level=warning msg="D:\\AIAgents\\workers\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[2026-05-27 10:43:21] NAME               IMAGE                COMMAND                  SERVICE   CREATED       STATUS                            PORTS
+[2026-05-27 10:43:21] workers-db-1       postgres:15-alpine   "docker-entrypoint.sGǪ"   db        3 hours ago   Up 3 hours (healthy)              5432/tcp
+[2026-05-27 10:43:21] workers-redis-1    redis:7-alpine       "docker-entrypoint.sGǪ"   redis     3 hours ago   Up 3 hours (healthy)              0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+[2026-05-27 10:43:21] workers-worker-1   workers-worker       "bash -c 'sleep 5 &&GǪ"   worker    3 hours ago   Restarting (127) 52 seconds ago   
+[2026-05-27 10:43:21] --- Registering AetheraWatchdog scheduled task ---
+[2026-05-27 10:43:31] 
+[2026-05-27 10:43:31] ======================================================
+[2026-05-27 10:43:31]   Aethera Watchdog registered successfully
+[2026-05-27 10:43:31] ======================================================
+[2026-05-27 10:43:31] 
+[2026-05-27 10:43:31]   Task name   : AetheraWatchdog
+[2026-05-27 10:43:31]   State       : Ready
+[2026-05-27 10:43:31]   Run as      : SYSTEM (no login required)
+[2026-05-27 10:43:31]   Triggers    : at startup (+30s delay)  +  every 5 min
+[2026-05-27 10:43:31]   Script      : D:\rcm-ai-platform\scripts\ensure-running.ps1
+[2026-05-27 10:43:31]   Log file    : D:\rcm-ai-platform\logs\watchdog.log
+[2026-05-27 10:43:31] 
+[2026-05-27 10:43:31]   Run now to test:
+[2026-05-27 10:43:31]     Start-ScheduledTask -TaskName 'AetheraWatchdog'
+[2026-05-27 10:43:31] 
+[2026-05-27 10:43:31] --- Watchdog task status ---
+[2026-05-27 10:43:33] AetheraWatchdog task: Ready  RunAs: SYSTEM
+[2026-05-27 10:43:33] === Done. Review output above. ===
+============================================================

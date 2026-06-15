@@ -4,12 +4,13 @@ Separate queues for each domain to enable independent scaling.
 """
 
 from celery import Celery
+from celery.schedules import crontab
 from src.config import get_settings
 
 settings = get_settings()
 
 celery_app = Celery(
-    "medclaim",
+    "aethera",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
 )
@@ -33,6 +34,7 @@ celery_app.conf.update(
         "src.core.payments.*": {"queue": "payments"},
         "src.core.denials.*": {"queue": "denials"},
         "src.services.edi.*": {"queue": "edi"},
+        "src.core.ai_dispatch.*": {"queue": "ai_dispatch"},
     },
 
     # Retry configuration
@@ -57,6 +59,34 @@ celery_app.conf.update(
             "task": "src.core.denials.tasks.analyze_denial_patterns",
             "schedule": 604800.0,  # Weekly
         },
+        "sftp-file-watcher": {
+            "task": "src.core.ehr_integration.tasks.sftp_file_watcher",
+            "schedule": crontab(minute="*/15"),  # every 15 minutes
+        },
+        "fhir-sync-all-practices": {
+            "task": "src.core.ehr_integration.tasks.sync_fhir_all_practices",
+            "schedule": crontab(hour="*/6"),  # every 6 hours
+        },
+        "auto-close-resolved-denials": {
+            "task": "src.core.ehr_integration.tasks.auto_close_resolved_denials",
+            "schedule": crontab(minute="*/30"),  # every 30 minutes
+        },
+        "generate-patient-statements": {
+            "task": "src.core.ehr_integration.tasks.generate_patient_statements",
+            "schedule": crontab(hour="3", minute="0"),  # daily at 3am
+        },
+        "sla-breach-notifications": {
+            "task": "src.core.notifications.tasks.send_sla_breach_notifications",
+            "schedule": crontab(minute="*/30"),  # every 30 minutes
+        },
+        "denial-deadline-alerts": {
+            "task": "src.core.notifications.tasks.send_denial_deadline_alerts",
+            "schedule": crontab(hour="8", minute="0"),  # daily at 8am
+        },
+        "dispatch-pending-ai-items": {
+            "task": "src.core.ai_dispatch.tasks.dispatch_pending_ai_items",
+            "schedule": 300.0,  # Every 5 minutes
+        },
     },
 )
 
@@ -67,5 +97,9 @@ celery_app.autodiscover_tasks([
     "src.core.denials",
     "src.core.queues",
     "src.core.client_billing",
+    "src.core.ehr_integration",
+    "src.core.notifications",
     "src.services.edi",
+    "src.core.error_intelligence",  # AI auto-debugging
+    "src.core.ai_dispatch",         # Autonomous AI queue processing
 ])

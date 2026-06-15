@@ -1,0 +1,9 @@
+@echo off
+echo [1/3] Clearing stale Python bytecode cache in ai_dispatch...
+docker compose run --rm api find /app/src/core/ai_dispatch -name "*.pyc" -delete
+echo.
+echo [2/3] Force-recreating celery-worker and celery-beat containers...
+docker compose up -d --force-recreate celery-worker celery-beat
+echo.
+echo [3/3] Tailing celery-worker logs (Ctrl+C to stop)...
+docker compose logs celery-worker --tail=30 --follow

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Receipt, Download } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse, safeNumber } from '../lib/apiHelpers';
 
 interface Invoice {
   id: string;
@@ -14,23 +15,18 @@ interface Invoice {
   created_at: string;
 }
 
-interface InvoicesResponse {
-  items: Invoice[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
 export function InvoicesPage() {
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery<InvoicesResponse>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['provider-invoices', page],
     queryFn: () =>
       api
-        .get('/portal/invoices/', { params: { page, page_size: 20 } })
+        .get('/portal/invoices', { params: { page, page_size: 20 } })
         .then((r) => r.data),
   });
+
+  const data = normalizeListResponse<Invoice>(rawData);
 
   const statusBadge = (s: string) => {
     const colors: Record<string, string> = {
@@ -41,6 +37,9 @@ export function InvoicesPage() {
     };
     return colors[s] || 'bg-gray-100 text-gray-700';
   };
+
+  const fmtAmount = (v: number) =>
+    '$' + safeNumber(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <div>
@@ -69,17 +68,17 @@ export function InvoicesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {data?.items.map((inv) => (
+              {data.items.map((inv) => (
                 <tr key={inv.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-medium text-brand-600">{inv.invoice_number}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{inv.period_start} — {inv.period_end}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">${inv.amount.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-brand-600">{inv.invoice_number ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{inv.period_start ?? '—'} — {inv.period_end ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{fmtAmount(inv.amount)}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(inv.status)}`}>
-                      {inv.status}
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(inv.status ?? '')}`}>
+                      {inv.status ?? '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{inv.due_date}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{inv.due_date ?? '—'}</td>
                   <td className="px-4 py-3">
                     <button className="inline-flex items-center gap-1 rounded-md text-sm text-brand-600 hover:text-brand-700">
                       <Download className="h-3.5 w-3.5" />
@@ -88,7 +87,7 @@ export function InvoicesPage() {
                   </td>
                 </tr>
               ))}
-              {(!data?.items.length) && (
+              {data.items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
                     <Receipt className="mx-auto mb-2 h-8 w-8 text-gray-300" />
@@ -101,7 +100,7 @@ export function InvoicesPage() {
         </div>
       )}
 
-      {data && data.total > 20 && (
+      {data.total > 20 && (
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-gray-500">
             Showing {(page - 1) * 20 + 1}–{Math.min(page * 20, data.total)} of {data.total}

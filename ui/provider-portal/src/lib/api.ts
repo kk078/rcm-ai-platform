@@ -56,7 +56,7 @@ api.interceptors.response.use(
           localStorage.removeItem('provider_refresh_token');
           localStorage.removeItem('provider_user');
           if (!window.location.pathname.includes('/login')) {
-            window.location.href = '/login';
+            window.location.href = '/portal/login';
           }
           return Promise.reject(error);
         }
@@ -64,7 +64,7 @@ api.interceptors.response.use(
         localStorage.removeItem('provider_access_token');
         localStorage.removeItem('provider_user');
         if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login';
+          window.location.href = '/portal/login';
         }
       }
     }

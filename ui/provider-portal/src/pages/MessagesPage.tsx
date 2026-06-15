@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, Send } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse } from '../lib/apiHelpers';
 
 interface Message {
   id: string;
@@ -12,35 +13,31 @@ interface Message {
   created_at: string;
 }
 
-interface MessagesResponse {
-  items: Message[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
 export function MessagesPage() {
   const queryClient = useQueryClient();
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery<MessagesResponse>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['provider-messages'],
     queryFn: () =>
       api
-        .get('/portal/messages/', { params: { page_size: 20 } })
+        .get('/portal/messages', { params: { page_size: 20 } })
         .then((r) => r.data),
   });
+
+  const data = normalizeListResponse<Message>(rawData);
+  const items = data.items;
 
   const readMutation = useMutation({
     mutationFn: (messageId: string) => api.post(`/portal/messages/${messageId}/read`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['provider-messages'] }),
   });
 
-  const selected = data?.items.find((m) => m.id === selectedMessage);
+  const selected = items.find((m) => m.id === selectedMessage);
 
   const handleSelect = (id: string) => {
     setSelectedMessage(id);
-    const msg = data?.items.find((m) => m.id === id);
+    const msg = items.find((m) => m.id === id);
     if (msg && !msg.is_read) {
       readMutation.mutate(id);
     }
@@ -64,7 +61,7 @@ export function MessagesPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-100 overflow-y-auto" style={{ maxHeight: '100%' }}>
-              {data?.items.map((msg) => (
+              {items.map((msg) => (
                 <button
                   key={msg.id}
                   onClick={() => handleSelect(msg.id)}
@@ -74,16 +71,16 @@ export function MessagesPage() {
                 >
                   <div className="flex items-center justify-between">
                     <span className={`text-sm ${!msg.is_read ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
-                      {msg.from_name}
+                      {msg.from_name ?? 'Unknown'}
                     </span>
-                    <span className="text-xs text-gray-400">{msg.created_at}</span>
+                    <span className="text-xs text-gray-400">{msg.created_at ?? ''}</span>
                   </div>
                   <p className={`mt-0.5 text-sm ${!msg.is_read ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
-                    {msg.subject}
+                    {msg.subject ?? '(no subject)'}
                   </p>
                 </button>
               ))}
-              {(!data?.items.length) && (
+              {items.length === 0 && (
                 <div className="py-12 text-center text-sm text-gray-500">
                   <MessageSquare className="mx-auto mb-2 h-8 w-8 text-gray-300" />
                   No messages
@@ -97,9 +94,9 @@ export function MessagesPage() {
         <div className="flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white">
           {selected ? (
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-gray-900">{selected.subject}</h2>
-              <p className="mt-1 text-sm text-gray-500">From: {selected.from_name} · {selected.created_at}</p>
-              <div className="mt-4 text-sm text-gray-700 whitespace-pre-wrap">{selected.body}</div>
+              <h2 className="text-lg font-semibold text-gray-900">{selected.subject ?? '(no subject)'}</h2>
+              <p className="mt-1 text-sm text-gray-500">From: {selected.from_name ?? 'Unknown'} · {selected.created_at ?? ''}</p>
+              <div className="mt-4 text-sm text-gray-700 whitespace-pre-wrap">{selected.body ?? ''}</div>
             </div>
           ) : (
             <div className="flex h-full items-center justify-center">

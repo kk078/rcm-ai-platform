@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models for MedClaim AI.
+SQLAlchemy ORM models for Aethera AI.
 
 Defines all database tables for the multi-tenant third-party medical billing platform.
 Every tenant-scoped table has practice_id with Row-Level Security enforced at the DB level.
@@ -18,13 +18,18 @@ def utcnow():
 from sqlalchemy import (
     ARRAY,
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Index,
+    Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
@@ -163,7 +168,9 @@ class User(Base, TimestampMixin):
     last_login: Mapped[datetime | None]
     mfa_enabled: Mapped[bool] = mapped_column(default=False)
     mfa_secret: Mapped[str | None] = mapped_column(EncryptedString)
+    mfa_backup_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_changed_at: Mapped[datetime] = mapped_column(default=lambda: utcnow(), nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(default=False)
     failed_login_count: Mapped[int] = mapped_column(default=0)
     locked_until: Mapped[datetime | None]
 
@@ -456,6 +463,253 @@ class ServiceAgreement(Base, TimestampMixin):
     __table_args__ = (
         Index("idx_agreements_practice", "practice_id"),
     )
+
+
+# ── Eligibility Checks ──────────────────────────────────────────────────
+
+
+class EligibilityCheck(TimestampMixin, Base):
+    """Real-time eligibility check results for patient/coverage."""
+    __tablename__ = "eligibility_checks"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("practices.id"), nullable=False)
+    patient_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("patients.id"), nullable=False)
+    coverage_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("coverages.id"))
+    charge_batch_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("charge_batches.id"))
+    payer_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("payers.id"))
+    check_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+    service_date: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, active, inactive, error
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    deductible_total: Mapped[Numeric | None] = mapped_column(Numeric(10, 2))
+    deductible_met: Mapped[Numeric | None] = mapped_column(Numeric(10, 2))
+    oop_total: Mapped[Numeric | None] = mapped_column(Numeric(10, 2))
+    oop_met: Mapped[Numeric | None] = mapped_column(Numeric(10, 2))
+    copay: Mapped[Numeric | None] = mapped_column(Numeric(10, 2))
+    coinsurance_pct: Mapped[int | None] = mapped_column(Integer)
+    network_status: Mapped[str | None] = mapped_column(String(20))  # in-network, out-of-network, unknown
+    plan_name: Mapped[str | None] = mapped_column(String(200))
+    group_number: Mapped[str | None] = mapped_column(String(100))
+    raw_response: Mapped[dict | None] = mapped_column(JSONB)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    checked_by_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
+    # Relationships
+    patient: Mapped["Patient"] = relationship("Patient", foreign_keys=[patient_id], lazy="selectin")
+    coverage: Mapped["Coverage | None"] = relationship("Coverage", foreign_keys=[coverage_id], lazy="selectin")
+    __table_args__ = (
+        Index("ix_eligibility_checks_practice_patient", "practice_id", "patient_id"),
+        Index("ix_eligibility_checks_check_date", "check_date"),
+    )
+
+
+# ── Prior Authorizations ────────────────────────────────────────────────
+
+
+class PriorAuthorization(TimestampMixin, Base):
+    """Prior authorization tracking per encounter/procedure."""
+    __tablename__ = "prior_authorizations"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("practices.id"), nullable=False)
+    patient_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("patients.id"), nullable=False)
+    coverage_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("coverages.id"))
+    encounter_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("encounters.id"))
+    claim_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("claims.id"))
+    payer_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("payers.id"))
+    auth_number: Mapped[str | None] = mapped_column(String(100))
+    procedure_codes: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)))
+    diagnosis_codes: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)))
+    status: Mapped[str] = mapped_column(String(30), default="pending")  # pending, approved, denied, expired, cancelled
+    requested_date: Mapped[date | None] = mapped_column(Date)
+    approved_date: Mapped[date | None] = mapped_column(Date)
+    valid_from: Mapped[date | None] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    approved_units: Mapped[int | None] = mapped_column(Integer)
+    approved_visits: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text)
+    requested_by_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
+    denial_reason: Mapped[str | None] = mapped_column(Text)
+    appeal_deadline: Mapped[date | None] = mapped_column(Date)
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    # Relationships
+    patient: Mapped["Patient"] = relationship("Patient", lazy="selectin")
+    encounter: Mapped["Encounter | None"] = relationship("Encounter", lazy="selectin")
+    __table_args__ = (
+        Index("ix_prior_auth_practice_patient", "practice_id", "patient_id"),
+        Index("ix_prior_auth_status", "status"),
+        Index("ix_prior_auth_valid_to", "valid_to"),
+    )
+
+
+# ── Patient Statements ──────────────────────────────────────────────────
+
+
+class PatientStatement(TimestampMixin, Base):
+    """Patient responsibility statements and balance tracking."""
+    __tablename__ = "patient_statements"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("practices.id"), nullable=False)
+    patient_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("patients.id"), nullable=False)
+    statement_number: Mapped[str] = mapped_column(String(50), unique=True)
+    statement_date: Mapped[date] = mapped_column(Date, default=date.today)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    total_charges: Mapped[Numeric] = mapped_column(Numeric(12, 2), default=0)
+    total_insurance_paid: Mapped[Numeric] = mapped_column(Numeric(12, 2), default=0)
+    total_adjustments: Mapped[Numeric] = mapped_column(Numeric(12, 2), default=0)
+    total_patient_paid: Mapped[Numeric] = mapped_column(Numeric(12, 2), default=0)
+    balance_due: Mapped[Numeric] = mapped_column(Numeric(12, 2), default=0)
+    status: Mapped[str] = mapped_column(String(20), default="open")  # open, paid, partial, collections, voided
+    delivery_method: Mapped[str | None] = mapped_column(String(20))  # email, sms, mail, portal
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payment_reference: Mapped[str | None] = mapped_column(String(100))
+    line_items: Mapped[dict | None] = mapped_column(JSONB)
+    notes: Mapped[str | None] = mapped_column(Text)
+    # Relationships
+    patient: Mapped["Patient"] = relationship("Patient", lazy="selectin")
+    __table_args__ = (
+        Index("ix_patient_statements_practice_patient", "practice_id", "patient_id"),
+        Index("ix_patient_statements_status", "status"),
+    )
+
+
+# ── Document Attachments ────────────────────────────────────────────────
+
+
+class DocumentAttachment(TimestampMixin, Base):
+    """Document management — files linked to any entity."""
+    __tablename__ = "document_attachments"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("practices.id"), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(50))  # claim, denial, appeal, encounter, patient, prior_auth
+    entity_id: Mapped[uuid.UUID] = mapped_column(PG_UUID)
+    file_name: Mapped[str] = mapped_column(String(500))
+    file_size: Mapped[int | None] = mapped_column(Integer)  # bytes
+    mime_type: Mapped[str | None] = mapped_column(String(100))
+    storage_key: Mapped[str] = mapped_column(String(1000))  # S3/R2 object key
+    storage_url: Mapped[str | None] = mapped_column(String(2000))  # signed URL (ephemeral)
+    document_type: Mapped[str | None] = mapped_column(String(50))  # eob, appeal_letter, clinical_note, auth, other
+    description: Mapped[str | None] = mapped_column(Text)
+    uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
+    is_phi: Mapped[bool] = mapped_column(Boolean, default=True)
+    __table_args__ = (
+        Index("ix_document_attachments_entity", "entity_type", "entity_id"),
+        Index("ix_document_attachments_practice", "practice_id"),
+    )
+
+
+# ── Notification Rules & Log ────────────────────────────────────────────
+
+
+class NotificationRule(TimestampMixin, Base):
+    """Configurable rules for when to send notifications and via which channels."""
+    __tablename__ = "notification_rules"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("practices.id"))  # None = global
+    event_type: Mapped[str] = mapped_column(String(100))  # sla_breach, denial_deadline, era_posted, appeal_due, eligibility_failed
+    role_filter: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)))  # roles to notify; None = all
+    channels: Mapped[list[str]] = mapped_column(ARRAY(String(20)))  # email, sms, portal
+    threshold_hours: Mapped[int | None] = mapped_column(Integer)  # for deadline-based triggers
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    template_subject: Mapped[str | None] = mapped_column(String(500))
+    template_body: Mapped[str | None] = mapped_column(Text)
+
+
+class NotificationLog(TimestampMixin, Base):
+    """Log of all notifications sent."""
+    __tablename__ = "notification_log"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("practices.id"))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
+    event_type: Mapped[str] = mapped_column(String(100))
+    channel: Mapped[str] = mapped_column(String(20))  # email, sms, portal
+    recipient: Mapped[str | None] = mapped_column(String(500))  # email or phone
+    subject: Mapped[str | None] = mapped_column(String(500))
+    body: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="sent")  # sent, failed, bounced
+    entity_type: Mapped[str | None] = mapped_column(String(50))
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    external_id: Mapped[str | None] = mapped_column(String(200))  # Twilio/SMTP message ID
+    __table_args__ = (Index("ix_notification_log_user_created", "user_id", "created_at"),)
+
+
+# ── AI Coding Feedback ──────────────────────────────────────────────────
+
+
+class AICodingFeedback(TimestampMixin, Base):
+    """Captures coder overrides of AI suggestions for model improvement."""
+    __tablename__ = "ai_coding_feedback"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("practices.id"), nullable=False)
+    coding_session_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("coding_sessions.id"), nullable=False)
+    encounter_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("encounters.id"))
+    coder_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("users.id"), nullable=False)
+    ai_suggested_dx: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)))
+    ai_suggested_cpt: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)))
+    final_dx: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)))
+    final_cpt: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)))
+    dx_accepted: Mapped[bool | None] = mapped_column(Boolean)
+    cpt_accepted: Mapped[bool | None] = mapped_column(Boolean)
+    override_reason: Mapped[str | None] = mapped_column(Text)
+    specialty: Mapped[str | None] = mapped_column(String(100))
+    ai_provider: Mapped[str | None] = mapped_column(String(50))  # ollama, anthropic
+    ai_model: Mapped[str | None] = mapped_column(String(100))
+    __table_args__ = (
+        Index("ix_ai_coding_feedback_practice_specialty", "practice_id", "specialty"),
+        Index("ix_ai_coding_feedback_coder", "coder_id"),
+    )
+
+
+# ── EHR Connections ─────────────────────────────────────────────────────
+
+
+class EHRConnection(TimestampMixin, Base):
+    """Configuration for EHR/EMR/PMS integration per practice."""
+    __tablename__ = "ehr_connections"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("practices.id"), nullable=False, unique=True)
+    ehr_type: Mapped[str] = mapped_column(String(50))  # fhir_r4, athena, kareo, drchrono, hl7v2, sftp_csv, webhook, zapier
+    ehr_name: Mapped[str | None] = mapped_column(String(200))  # e.g. "Epic", "Kareo"
+    base_url: Mapped[str | None] = mapped_column(String(2000))
+    client_id: Mapped[str | None] = mapped_column(String(500))
+    client_secret_enc: Mapped[str | None] = mapped_column(Text)  # encrypted
+    access_token_enc: Mapped[str | None] = mapped_column(Text)   # encrypted, short-lived
+    refresh_token_enc: Mapped[str | None] = mapped_column(Text)  # encrypted
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sftp_host: Mapped[str | None] = mapped_column(String(500))
+    sftp_port: Mapped[int | None] = mapped_column(Integer, default=22)
+    sftp_username: Mapped[str | None] = mapped_column(String(200))
+    sftp_password_enc: Mapped[str | None] = mapped_column(Text)  # encrypted
+    sftp_path: Mapped[str | None] = mapped_column(String(1000))
+    webhook_secret: Mapped[str | None] = mapped_column(String(500))
+    fhir_patient_scope: Mapped[bool] = mapped_column(Boolean, default=True)
+    fhir_coverage_scope: Mapped[bool] = mapped_column(Boolean, default=True)
+    fhir_encounter_scope: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_sync_status: Mapped[str | None] = mapped_column(String(20))  # success, failed, partial
+    last_sync_count: Mapped[int | None] = mapped_column(Integer)
+    config: Mapped[dict | None] = mapped_column(JSONB)  # extra vendor-specific config
+
+
+class EHRSyncLog(TimestampMixin, Base):
+    """Log of EHR sync operations."""
+    __tablename__ = "ehr_sync_log"
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    ehr_connection_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("ehr_connections.id"), nullable=False)
+    practice_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("practices.id"), nullable=False)
+    sync_type: Mapped[str] = mapped_column(String(50))  # patients, coverage, encounters, charges
+    trigger: Mapped[str] = mapped_column(String(50))  # scheduled, webhook, manual
+    records_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    records_created: Mapped[int] = mapped_column(Integer, default=0)
+    records_updated: Mapped[int] = mapped_column(Integer, default=0)
+    records_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    records_errored: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running, success, failed, partial
+    error_details: Mapped[dict | None] = mapped_column(JSONB)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (Index("ix_ehr_sync_log_connection", "ehr_connection_id", "started_at"),)
 
 
 class PayerEnrollment(Base, TimestampMixin):
@@ -764,9 +1018,6 @@ class Adjustment(Base):
     )
 
 
-# ── Denials & Appeals ──────────────────────────────────────────────────
-
-
 class Denial(Base, TimestampMixin):
     __tablename__ = "denials"
 
@@ -856,7 +1107,7 @@ class Appeal(Base, TimestampMixin):
     )
 
 
-# ── Charge Intake ──────────────────────────────────────────────────────
+# ── Eligibility Checks ──────────────────────────────────────────────────
 
 
 class ChargeBatch(Base):
@@ -1042,6 +1293,8 @@ class WorkQueueItem(Base, TimestampMixin):
     started_at: Mapped[datetime | None]
     completed_at: Mapped[datetime | None]
     time_spent_seconds: Mapped[int | None]
+    notes: Mapped[str | None] = mapped_column(Text)  # AI agent completion/escalation notes
+    agent_trace: Mapped[list | None] = mapped_column(JSONB)  # step-by-step AI reasoning trace
 
     practice: Mapped["Practice"] = relationship(back_populates="work_queue_items")
 
@@ -1156,5 +1409,109 @@ class AuditLog(Base):
     __table_args__ = (
         Index("idx_audit_user", "user_id"),
         Index("idx_audit_resource", "resource_type", "resource_id"),
-        Index("idx_audit_created", "created_at"),
+                Index("idx_audit_created", "created_at"),
     )
+
+
+# ── Error Intelligence ─────────────────────────────────────────────────────
+
+
+class ErrorLog(Base, TimestampMixin):
+    """
+    Stores every unhandled application error along with its AI-generated analysis.
+    Powers the Error Intelligence dashboard in the staff portal.
+    """
+    __tablename__ = "error_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+
+    # Error details
+    error_type: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    stack_trace: Mapped[str | None] = mapped_column(Text)
+    status_code: Mapped[int | None] = mapped_column(Integer)
+
+    # Request context
+    request_path: Mapped[str | None] = mapped_column(String(500))
+    request_method: Mapped[str | None] = mapped_column(String(10))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID)
+
+    # Sentry cross-reference
+    sentry_event_id: Mapped[str | None] = mapped_column(String(100))
+
+    # AI analysis
+    severity: Mapped[str] = mapped_column(String(20), default="unknown")  # critical|high|medium|low|unknown
+    analysis_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending|analyzing|complete|failed
+    ai_analysis: Mapped[dict | None] = mapped_column(JSONB)
+
+    # Resolution
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(PG_UUID)
+
+    # Deduplication
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
+
+    # Auto-patcher results
+    patch_applied: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    patch_backup_path: Mapped[str | None] = mapped_column(Text)
+    patch_diff: Mapped[str | None] = mapped_column(Text)
+    patch_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    patch_error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("idx_error_logs_severity", "severity"),
+        Index("idx_error_logs_resolved", "resolved"),
+        Index("idx_error_logs_created", "created_at"),
+        Index("idx_error_logs_type", "error_type"),
+        Index("idx_error_logs_patch_applied", "patch_applied"),
+    )
+
+
+# ── Claim Forms (CMS-1500 / UB-04 assembled field sets) ──────────────────
+
+
+class ClaimForm(Base, TimestampMixin):
+    """Assembled, enriched, reviewable claim-form field set for a Claim.
+
+    `fields` holds the full form payload (sections + diagnoses + service_lines)
+    as produced by src.core.claim_forms; `edits` holds scrub validation; status
+    is draft -> approved before submission.
+    """
+    __tablename__ = "claim_forms"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    claim_id: Mapped[uuid.UUID] = mapped_column(PG_UUID, ForeignKey("claims.id"), nullable=False)
+    practice_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("practices.id"))
+    form_type: Mapped[str] = mapped_column(String(10), nullable=False)  # cms1500 | ub04
+    fields: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    edits: Mapped[list | None] = mapped_column(JSONB)
+    enrichment: Mapped[dict | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+
+    __table_args__ = (
+        UniqueConstraint("claim_id", "form_type", name="uq_claim_forms_claim_formtype"),
+        Index("idx_claim_forms_claim", "claim_id"),
+    )
+
+
+# ── Agent control plane (AI Assistant -> AI agents directives) ───────────
+
+
+class AgentDirective(Base, TimestampMixin):
+    """Runtime control for an AI agent, set by the AI Assistant / admins.
+
+    agent_type '*' is the global default merged under each specific agent.
+    confidence_threshold None -> use the platform settings default.
+    instructions = standing natural-language policy injected into the agent's
+    reasoning so assistant instructions are actually complied with.
+    """
+    __tablename__ = "agent_directives"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    agent_type: Mapped[str] = mapped_column(String(30), nullable=False, unique=True)
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    confidence_threshold: Mapped[float | None]
+    auto_advance: Mapped[bool] = mapped_column(default=False, nullable=False)
+    instructions: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(PG_UUID)

@@ -1,5 +1,5 @@
 """
-Comprehensive test suite for MedClaim AI platform.
+Comprehensive test suite for Aethera AI platform.
 Tests all API endpoints, EDI parser, PHI redaction, and rules engine.
 """
 
@@ -774,7 +774,7 @@ class TestConfiguration:
     def test_settings_load(self):
         from src.config import get_settings
         settings = get_settings()
-        assert settings.app_name == "medclaim-ai"
+        assert settings.app_name == "aethera-ai"
         assert settings.app_env == "development"
 
     def test_settings_is_production(self):

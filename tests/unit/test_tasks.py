@@ -15,7 +15,7 @@ class TestCeleryAppConfiguration:
     def test_celery_app_exists(self):
         from src.infrastructure.queue.celery_app import celery_app
         assert celery_app is not None
-        assert celery_app.main == "medclaim"
+        assert celery_app.main == "aethera"
 
     def test_celery_serializer_is_json(self):
         from src.infrastructure.queue.celery_app import celery_app

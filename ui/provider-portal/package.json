@@ -1,7 +1,7 @@
 {
-  "name": "medclaim-provider-portal",
+  "name": "aethera-provider-portal",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.51.0",
+    "@sentry/react": "^8.0.0",
     "axios": "^1.7.4",
     "clsx": "^2.1.1",
     "lucide-react": "^0.441.0",

@@ -1,0 +1,85 @@
+============================================================ 
+ SMOKE TEST: AI Dispatch Pipeline 
+ Started: Wed 05/27/2026  2:38:22.82 
+============================================================ 
+ 
+[1/4] Checking Docker stack status... 
+time="2026-05-27T02:38:22+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+NAME                              IMAGE                           COMMAND                  SERVICE         CREATED         STATUS                     PORTS
+rcm-ai-platform-ai-agents-1       rcm-ai-platform-ai-agents       "uvicorn api.main:ap…"   ai-agents       10 hours ago    Up 10 hours (healthy)      0.0.0.0:8001->8001/tcp, [::]:8001->8001/tcp
+rcm-ai-platform-api-1             rcm-ai-platform-api             "uvicorn src.api.mai…"   api             10 hours ago    Up 10 hours (healthy)      0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infra…"   celery-beat     6 hours ago     Up 6 hours (unhealthy)     8000/tcp
+rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infra…"   celery-worker   3 minutes ago   Up 3 minutes (unhealthy)   8000/tcp
+rcm-ai-platform-cloudflared-1     cloudflare/cloudflared:latest   "cloudflared --no-au…"   cloudflared     5 hours ago     Up 5 hours                 
+rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-ent…"   minio           10 hours ago    Up 10 hours (healthy)      0.0.0.0:9000-9001->9000-9001/tcp, [::]:9000-9001->9000-9001/tcp
+rcm-ai-platform-nginx-1           rcm-ai-platform-nginx           "/docker-entrypoint.…"   nginx           10 hours ago    Up 10 hours (healthy)      0.0.0.0:8080->80/tcp, [::]:8080->80/tcp
+rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.s…"   postgres        10 hours ago    Up 10 hours (healthy)      0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          10 hours ago    Up 10 hours (healthy)      0.0.0.0:6333->6333/tcp, [::]:6333->6333/tcp
+rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.s…"   redis           10 hours ago    Up 10 hours (healthy)      0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp
+ 
+[2/4] Existing practices (seed data check)... 
+time="2026-05-27T02:38:23+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+                  id                  |       practice_name       | status 
+--------------------------------------+---------------------------+--------
+ a99b8595-d0db-4064-a4ef-ebaf3966ca7d | Aethera Healthcare        | active
+ 9430a396-1a3f-42a4-bdac-d066c3c16c21 | Riverside Family Medicine | active
+(2 rows)
+
+ 
+[3/4] Inserting pending work queue item... 
+time="2026-05-27T02:38:23+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+                  id                  | queue_type |  item_type   | status  
+--------------------------------------+------------+--------------+---------
+ 4fe6c20c-18eb-4572-82cd-c87bff43b167 | coding     | charge_entry | pending
+(1 row)
+
+INSERT 0 1
+ 
+[4/4] Celery worker last 30 lines (checking for dispatch)... 
+time="2026-05-27T02:38:23+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+celery-worker-1  |   . src.core.ai_dispatch.tasks.dispatch_pending_ai_items
+celery-worker-1  |   . src.core.ai_dispatch.tasks.dispatch_work_item_to_ai
+celery-worker-1  |   . src.core.billing.tasks.check_timely_filing_deadlines
+celery-worker-1  |   . src.core.client_billing.tasks.generate_monthly_invoices
+celery-worker-1  |   . src.core.client_billing.tasks.mark_overdue_invoices
+celery-worker-1  |   . src.core.coding.tasks.batch_process_coding_sessions
+celery-worker-1  |   . src.core.coding.tasks.process_coding_session
+celery-worker-1  |   . src.core.denials.tasks.analyze_denial_patterns
+celery-worker-1  |   . src.core.denials.tasks.check_appeal_deadlines
+celery-worker-1  |   . src.core.ehr_integration.tasks.auto_close_resolved_denials
+celery-worker-1  |   . src.core.ehr_integration.tasks.generate_patient_statements
+celery-worker-1  |   . src.core.ehr_integration.tasks.sftp_file_watcher
+celery-worker-1  |   . src.core.ehr_integration.tasks.sync_fhir_all_practices
+celery-worker-1  |   . src.core.error_intelligence.tasks.record_and_analyze_error
+celery-worker-1  |   . src.core.notifications.tasks.send_denial_deadline_alerts
+celery-worker-1  |   . src.core.notifications.tasks.send_sla_breach_notifications
+celery-worker-1  |   . src.core.payments.tasks.daily_reconciliation
+celery-worker-1  |   . src.core.payments.tasks.process_era_file
+celery-worker-1  |   . src.core.queues.tasks.auto_assign_pending_items
+celery-worker-1  |   . src.core.queues.tasks.check_sla_breaches
+celery-worker-1  |   . src.services.edi.tasks.generate_edi_837
+celery-worker-1  |   . src.services.edi.tasks.submit_claim_batch
+celery-worker-1  | 
+celery-worker-1  | [2026-05-26 21:04:58,724: INFO/MainProcess] Connected to redis://redis:6379/2
+celery-worker-1  | [2026-05-26 21:04:58,731: INFO/MainProcess] mingle: searching for neighbors
+celery-worker-1  | [2026-05-26 21:04:59,753: INFO/MainProcess] mingle: all alone
+celery-worker-1  | [2026-05-26 21:04:59,778: INFO/MainProcess] celery@587b6ceab93a ready.
+celery-worker-1  | [2026-05-26 21:07:01,059: INFO/MainProcess] Task src.core.ai_dispatch.tasks.dispatch_pending_ai_items[b54d2b43-f23f-47aa-8350-9cf177895f9c] received
+celery-worker-1  | [2026-05-26 21:07:01,252: INFO/ForkPoolWorker-4] ai_dispatch: beat fan-out dispatched 0 items
+celery-worker-1  | [2026-05-26 21:07:01,254: INFO/ForkPoolWorker-4] Task src.core.ai_dispatch.tasks.dispatch_pending_ai_items[b54d2b43-f23f-47aa-8350-9cf177895f9c] succeeded in 0.19214794799336232s: {'dispatched': 0, 'item_ids': []}
+ 
+[5/4] Queue status after insert (last 5 items)... 
+time="2026-05-27T02:38:24+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+                  id                  | queue_type |  item_type   |  status   | priority |         created_at         
+--------------------------------------+------------+--------------+-----------+----------+----------------------------
+ 4fe6c20c-18eb-4572-82cd-c87bff43b167 | coding     | charge_entry | pending   |       50 | 2026-05-26 21:08:23.654076
+ 72e9f0ce-3d6f-4c66-991f-1d7bab16d509 | coding     | charge_entry | escalated |       50 | 2026-05-26 19:28:10.625591
+ 29d3ad86-30f7-47de-b7af-80ab7ea23329 | coding     | charge_entry | escalated |       50 | 2026-05-26 15:27:24.785446
+ 36ed4fb0-1e3d-4f46-ae56-53d64b094783 | coding     | charge_entry | escalated |       50 | 2026-05-26 14:54:33.466659
+ d37e5295-d847-4c11-9834-b1a64546ae08 | denial     | claim        | escalated |       33 | 2026-05-19 15:39:22.245552
+(5 rows)
+
+ 
+============================================================ 
+ DONE: Wed 05/27/2026  2:38:24.23 
+============================================================ 

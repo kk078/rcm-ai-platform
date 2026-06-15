@@ -1,128 +1,80 @@
-# MedClaim AI — Intelligent Revenue Cycle Management Platform
+# Aethera AI — Intelligent Revenue Cycle Management
 
-## Overview
+**Aethera AI** is a production-grade, AI-powered Revenue Cycle Management (RCM) platform built for third-party medical billing companies and healthcare practices. It combines Ollama Cloud LLMs, a 9-pass claim scrubbing engine, RAG-powered coding assistance, and automated denial management to maximize clean claim rates and accelerate revenue recovery.
 
-MedClaim AI is an end-to-end AI-powered Revenue Cycle Management (RCM) platform that automates medical coding, claim submission, payment posting, and denial management. It combines large language models (Claude API), rules engines, and ML models to maximize clean claim rates and revenue recovery.
-
-## Architecture Summary
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        FRONTEND (React)                         │
-│  Dashboard │ Coding Workbench │ Denials Queue │ Payment Center  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ REST + WebSocket
-┌──────────────────────────▼──────────────────────────────────────┐
-│                      API GATEWAY (FastAPI)                       │
-│         Auth │ Rate Limiting │ Audit Logging │ HIPAA Middleware  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────────────┐
-│                    ORCHESTRATION LAYER                           │
-│              Celery Task Queue + Event Bus                       │
-└───┬──────────┬──────────┬──────────┬──────────┬─────────────────┘
-    │          │          │          │          │
-    ▼          ▼          ▼          ▼          ▼
-┌────────┐┌────────┐┌────────┐┌────────┐┌──────────┐
-│CODING  ││BILLING ││PAYMENT ││DENIAL  ││PAYER     │
-│ENGINE  ││ENGINE  ││POSTING ││MANAGER ││INTEL     │
-│        ││        ││        ││        ││          │
-│- NLP   ││- Claim ││- ERA   ││- Root  ││- Rules   │
-│- ICD10 ││  Scrub ││  835   ││  Cause ││- Fees    │
-│- CPT   ││- NCCI  ││- Match ││- Appeal││- Policies│
-│- HCPCs ││- Edits ││- Recon ││  Gen   ││- LCD/NCD │
-└───┬────┘└───┬────┘└───┬────┘└───┬────┘└────┬─────┘
-    │         │         │         │           │
-    ▼         ▼         ▼         ▼           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     AI / ML LAYER                                │
-│  Claude API (RAG) │ Fine-tuned Models │ Classification Models   │
-│  Vector DB (Qdrant) │ Embedding Pipeline │ Feedback Loop        │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────────────┐
-│                     DATA LAYER                                   │
-│  PostgreSQL (Claims/Patients) │ Redis (Cache/Sessions)          │
-│  Qdrant (Embeddings) │ S3 (Documents) │ TimescaleDB (Analytics) │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────────────┐
-│                  INTEGRATION LAYER                               │
-│  HL7/FHIR │ EDI 837/835/277/999 │ Clearinghouse APIs           │
-│  EHR Connectors (Epic/Cerner) │ Payer Portals                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Tech Stack
-
-| Layer              | Technology                                      |
-|--------------------|------------------------------------------------|
-| Frontend           | React 18 + TypeScript + Tailwind + shadcn/ui   |
-| API                | FastAPI (Python 3.12)                           |
-| Task Queue         | Celery + Redis                                  |
-| Primary DB         | PostgreSQL 16 + SQLAlchemy ORM                  |
-| Vector DB          | Qdrant (coding guidelines, payer policies)      |
-| Cache              | Redis                                           |
-| AI/LLM             | Anthropic Claude API (claude-sonnet-4-20250514)    |
-| Embeddings         | Voyage AI or OpenAI text-embedding-3-large      |
-| Object Storage     | S3-compatible (MinIO for local dev)             |
-| Analytics DB       | TimescaleDB (time-series denial/payment data)   |
-| EDI Processing     | Custom Python EDI parser (X12)                  |
-| FHIR               | HAPI FHIR client                                |
-| Auth               | OAuth2 + JWT + RBAC                             |
-| Deployment         | Docker + Kubernetes                             |
-| CI/CD              | GitHub Actions                                  |
-| Monitoring         | Prometheus + Grafana + Sentry                   |
+---
 
 ## Quick Start
 
+### Prerequisites
+- Docker + Docker Compose v2
+- Python 3.12+
+- Ollama Cloud API key
+- Cloudflare account (for production)
+
+### Development
 ```bash
-# 1. Clone and install
-git clone <repo-url> && cd rcm-ai-platform
-cp .env.example .env  # Fill in API keys
+cp .env.example .env
+# Fill in OLLAMA_API_KEY and generate secrets:
+python scripts/generate_secrets.py
 
-# 2. Start infrastructure
-docker-compose up -d postgres redis qdrant minio
-
-# 3. Run migrations
-python scripts/migrate.py
-
-# 4. Seed reference data (ICD-10, CPT, NCCI edits, payer rules)
-python scripts/seed_reference_data.py
-
-# 5. Build vector indices
-python scripts/build_vector_index.py
-
-# 6. Start API server
-uvicorn src.api.main:app --reload
-
-# 7. Start Celery workers
-celery -A src.infrastructure.queue.celery_app worker -l info
-
-# 8. Start frontend
-cd ui && npm install && npm run dev
+docker compose up -d
+# API available at http://localhost:8000
+# Docs at http://localhost:8000/api/docs (when APP_DEBUG=true)
 ```
 
-## Module Overview
+### Production (Cloudflare Tunnel)
+See [DEPLOY.md](DEPLOY.md) for the full deployment guide.
 
-See `/docs/` for detailed documentation on each module:
-- `ARCHITECTURE.md` — Full system architecture deep dive
-- `DATA_MODEL.md` — Database schema and relationships
-- `CODING_ENGINE.md` — Medical coding AI pipeline
-- `BILLING_ENGINE.md` — Claim scrubbing and submission
-- `PAYMENT_POSTING.md` — ERA/835 processing
-- `DENIAL_MANAGEMENT.md` — Denial workflow and appeal generation
-- `PAYER_INTELLIGENCE.md` — Payer rules and fee schedule management
-- `COMPLIANCE.md` — HIPAA, security, and audit requirements
-- `API_REFERENCE.md` — REST API documentation
-- `DEPLOYMENT.md` — Production deployment guide
+```bash
+./scripts/deploy.sh
+# Deploys to https://rcm.aetherahealthcare.com
+```
 
-## Compliance
+---
 
-This platform is designed for HIPAA compliance:
-- All PHI encrypted at rest (AES-256) and in transit (TLS 1.3)
-- Role-based access control with minimum necessary principle
-- Complete audit trail for every data access and modification
-- BAA-compliant AI API usage (Anthropic HIPAA-eligible tier)
-- PHI redaction pipeline before any external API calls
-- Automatic session timeout and access logging
+## Architecture
+
+| Layer | Technology |
+|-------|-----------|
+| API | FastAPI (Python 3.12), async/await |
+| AI | Ollama Cloud (qwen3-coder:480b-cloud + deepseek-v3.1:671-cloud) |
+| RAG | Qdrant vector DB + Voyage AI embeddings |
+| Database | PostgreSQL 16 + SQLAlchemy async |
+| Queue | Celery + Redis |
+| Storage | MinIO (S3-compatible) |
+| Frontend | React 18 + TypeScript + Vite + Tailwind CSS |
+| Auth | JWT + TOTP MFA + bcrypt + Redis token blacklist |
+| Deployment | Docker + Cloudflare Tunnel |
+
+---
+
+## Key Features
+
+- **AI Medical Coding** — RAG-powered ICD-10/CPT code suggestions via Ollama Cloud
+- **9-Pass Claim Scrubber** — NCCI, MUE, modifier, POS, age/gender, payer-specific checks
+- **Denial Management** — AI classification, automated appeal drafting, priority scoring
+- **Payment Posting** — ERA/835 parsing, auto-reconciliation
+- **EDI Processing** — 837P/837I submission, 835 posting
+- **Multi-Tenant** — Practice-level row isolation with AES-256 PHI encryption
+- **HIPAA Compliant** — Audit logging, session timeout, PHI redaction before AI calls
+
+---
+
+## Environment Variables
+
+See `.env.example` for a full annotated list. Critical variables:
+
+| Variable | Description |
+|----------|-------------|
+| `OLLAMA_API_KEY` | Ollama Cloud API key |
+| `JWT_SECRET_KEY` | 32-byte hex secret (`python -c "import secrets; print(secrets.token_hex(32))"`) |
+| `PHI_ENCRYPTION_KEY` | Fernet key for PHI column encryption |
+| `TUNNEL_TOKEN` | Cloudflare Tunnel token |
+| `DATABASE_URL` | PostgreSQL async connection string |
+
+---
+
+## License
+
+Proprietary — Aethera Healthcare. All rights reserved.

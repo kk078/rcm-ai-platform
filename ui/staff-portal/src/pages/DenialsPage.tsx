@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Search, Filter } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse, safeNumber } from '../lib/apiHelpers';
 
 interface Denial {
   id: string;
@@ -18,13 +19,6 @@ interface Denial {
   created_at: string;
 }
 
-interface DenialsResponse {
-  items: Denial[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
 const APPEAL_STATUSES = ['all', 'not_started', 'in_progress', 'appealed', 'won', 'lost', 'expired'] as const;
 
 export function DenialsPage() {
@@ -32,7 +26,7 @@ export function DenialsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery<DenialsResponse>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['denials', appealStatus, page],
     queryFn: () =>
       api
@@ -41,6 +35,11 @@ export function DenialsPage() {
         })
         .then((r) => r.data),
   });
+
+  const data = normalizeListResponse<Denial>(rawData);
+
+  const fmtCurrency = (v: number) =>
+    '$' + safeNumber(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const statusBadge = (s: string) => {
     const colors: Record<string, string> = {
@@ -54,19 +53,19 @@ export function DenialsPage() {
     return colors[s] || 'bg-gray-100 text-gray-700';
   };
 
-  const filtered = data?.items.filter(
+  const filtered = data.items.filter(
     (d) =>
       !search ||
-      d.claim_number.toLowerCase().includes(search.toLowerCase()) ||
-      d.denial_code.toLowerCase().includes(search.toLowerCase()) ||
-      d.patient_name.toLowerCase().includes(search.toLowerCase()),
+      (d.claim_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (d.denial_code ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (d.patient_name ?? '').toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Denial Management</h1>
-        <p className="mt-1 text-sm text-gray-500">{data?.total ?? 0} denials</p>
+        <p className="mt-1 text-sm text-gray-500">{data.total} denials</p>
       </div>
 
       <div className="mb-4 flex items-center gap-3">
@@ -115,20 +114,20 @@ export function DenialsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered?.map((denial) => (
+              {filtered.map((denial) => (
                 <tr key={denial.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-medium text-brand-600">{denial.claim_number}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900">{denial.patient_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{denial.payer_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900">{denial.denial_code}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-red-600">${denial.amount_denied.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-brand-600">{denial.claim_number ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{denial.patient_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{denial.payer_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{denial.denial_code ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-red-600">{fmtCurrency(denial.amount_denied)}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(denial.appeal_status)}`}>
-                      {denial.appeal_status.replace('_', ' ')}
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(denial.appeal_status ?? '')}`}>
+                      {(denial.appeal_status ?? '').replace('_', ' ')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {denial.days_remaining !== null ? (
+                    {denial.days_remaining != null ? (
                       <span className={denial.days_remaining <= 5 ? 'font-semibold text-red-600' : ''}>
                         {denial.days_remaining}d
                       </span>
@@ -136,7 +135,7 @@ export function DenialsPage() {
                   </td>
                 </tr>
               ))}
-              {(!filtered?.length) && (
+              {filtered.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
                     <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-gray-300" />

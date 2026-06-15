@@ -20,6 +20,7 @@ from src.infrastructure.database.models import (
     Denial,
     Practice,
     User,
+    Patient,
 )
 from src.infrastructure.auth.middleware import get_current_user
 
@@ -163,10 +164,16 @@ async def _build_queue_item_response(item: WorkQueueItem, db: AsyncSession) -> Q
         delta = datetime.utcnow() - item.created_at
         age_hours = round(delta.total_seconds() / 3600, 1)
 
-    # Get practice name
+    # Get practice name — explicit query to avoid async lazy-load issue
     practice_name = ""
-    if item.practice:
-        practice_name = item.practice.name or ""
+    if item.practice_id:
+        try:
+            prac_result = await db.execute(select(Practice).where(Practice.id == item.practice_id))
+            prac = prac_result.scalar_one_or_none()
+            if prac:
+                practice_name = prac.practice_name or ""
+        except Exception:
+            pass
 
     # Get assigned user name
     assigned_to_name = None
@@ -180,6 +187,33 @@ async def _build_queue_item_response(item: WorkQueueItem, db: AsyncSession) -> Q
     summary = f"{item.item_type.replace('_', ' ').title()} — {item.queue_type} queue"
     if practice_name:
         summary = f"{practice_name}: {summary}"
+
+    # Resolve patient name and dollar amount from the referenced item
+    patient_name = None
+    dollar_amount = None
+    try:
+        if item.item_type == "claim" and item.item_id:
+            claim_res = await db.execute(select(Claim).where(Claim.id == item.item_id))
+            claim = claim_res.scalar_one_or_none()
+            if claim:
+                dollar_amount = float(claim.total_charge or 0) or None
+                if claim.patient_id:
+                    pat_res = await db.execute(select(Patient).where(Patient.id == claim.patient_id))
+                    pat = pat_res.scalar_one_or_none()
+                    if pat:
+                        patient_name = f"{pat.first_name} {pat.last_name}".strip() or None
+        elif item.item_type == "denial" and item.item_id:
+            denial_res = await db.execute(select(Denial).where(Denial.id == item.item_id))
+            denial = denial_res.scalar_one_or_none()
+            if denial:
+                dollar_amount = float(denial.billed_amount or 0) or None
+                if denial.patient_id:
+                    pat_res = await db.execute(select(Patient).where(Patient.id == denial.patient_id))
+                    pat = pat_res.scalar_one_or_none()
+                    if pat:
+                        patient_name = f"{pat.first_name} {pat.last_name}".strip() or None
+    except Exception:
+        pass
 
     return QueueItemResponse(
         id=item.id,
@@ -197,6 +231,8 @@ async def _build_queue_item_response(item: WorkQueueItem, db: AsyncSession) -> Q
         sla_breached=item.sla_breached,
         age_hours=age_hours,
         summary=summary,
+        patient_name=patient_name,
+        dollar_amount=dollar_amount,
         created_at=item.created_at,
     )
 
@@ -807,3 +843,114 @@ async def get_sla_compliance_report(
         }
     except Exception:
         return {"total_items": 0, "sla_breached": 0, "compliance_rate": 1.0}
+
+
+# ── AI transparency, autonomy & batch review (roadmap A + D) ─────────────────
+import json as _json  # noqa: E402
+
+
+def _scope_provider(q, current_user):
+    """Restrict a WorkQueueItem query to the provider's own practice."""
+    if current_user.get("user_type") == "provider" and current_user.get("practice_id"):
+        return q.where(WorkQueueItem.practice_id == current_user["practice_id"])
+    return q
+
+
+def _parse_notes(notes: str | None) -> dict:
+    if not notes:
+        return {}
+    try:
+        return _json.loads(notes)
+    except (ValueError, TypeError):
+        return {"message": notes}
+
+
+@router.get("/queue/{item_id}/detail")
+async def get_queue_item_detail(
+    item_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Full work-item detail incl. the step-by-step AI agent trace (roadmap A)."""
+    item = await db.get(WorkQueueItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Work item not found")
+    if current_user.get("user_type") == "provider" and str(item.practice_id) != str(current_user.get("practice_id")):
+        raise HTTPException(status_code=403, detail="Not authorized for this item")
+    meta = _parse_notes(item.notes)
+    return {
+        "id": str(item.id),
+        "queue_type": item.queue_type,
+        "item_type": item.item_type,
+        "item_id": str(item.item_id),
+        "status": item.status,
+        "priority": item.priority,
+        "agent_type": meta.get("agent_type"),
+        "confidence": meta.get("confidence"),
+        "outcome": meta.get("outcome"),
+        "duration_ms": meta.get("duration_ms"),
+        "message": meta.get("message"),
+        "agent_trace": item.agent_trace or [],
+        "started_at": item.started_at.isoformat() if item.started_at else None,
+        "completed_at": item.completed_at.isoformat() if item.completed_at else None,
+    }
+
+
+@router.get("/needs-attention")
+async def needs_attention(
+    limit: int = Query(100, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Only the items a human must touch: escalated/failed or SLA-breached (roadmap D)."""
+    from sqlalchemy import or_  # noqa: PLC0415
+    q = select(WorkQueueItem).where(
+        or_(WorkQueueItem.status.in_(["escalated", "failed"]), WorkQueueItem.sla_breached.is_(True))
+    )
+    q = _scope_provider(q, current_user).order_by(WorkQueueItem.priority.desc()).limit(limit)
+    items = (await db.execute(q)).scalars().all()
+    out = []
+    for it in items:
+        meta = _parse_notes(it.notes)
+        out.append({
+            "id": str(it.id), "queue_type": it.queue_type, "status": it.status,
+            "priority": it.priority, "sla_breached": it.sla_breached,
+            "agent_type": meta.get("agent_type"), "confidence": meta.get("confidence"),
+            "reason": meta.get("message") or meta.get("outcome"),
+        })
+    return {"total": len(out), "items": out}
+
+
+class BulkCompleteRequest(BaseModel):
+    item_ids: list[UUID]
+    note: str | None = None
+
+
+@router.post("/queue/bulk-complete")
+async def bulk_complete(
+    body: BulkCompleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Approve/complete many AI-handled items in one action (roadmap D batch review)."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    updated = 0
+    for iid in body.item_ids:
+        item = await db.get(WorkQueueItem, iid)
+        if item is None:
+            continue
+        if current_user.get("user_type") == "provider" and str(item.practice_id) != str(current_user.get("practice_id")):
+            continue
+        if item.status in ("completed",):
+            continue
+        item.status = "completed"
+        item.completed_at = now
+        item.updated_at = now
+        meta = _parse_notes(item.notes)
+        meta["batch_approved_by"] = str(current_user.get("user_id"))
+        if body.note:
+            meta["approval_note"] = body.note
+        item.notes = _json.dumps(meta)[:2000]
+        updated += 1
+    await db.commit()
+    return {"updated": updated, "requested": len(body.item_ids)}

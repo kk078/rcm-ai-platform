@@ -33,7 +33,7 @@ def token_data():
     """Sample TokenData for testing."""
     return TokenData(
         user_id=uuid4(),
-        email="test@medclaim.ai",
+        email="test@aetherahealthcare.com",
         user_type="internal",
         practice_id=uuid4(),
         internal_role="company_admin",
@@ -284,7 +284,7 @@ class TestAccountLockout:
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",
@@ -298,7 +298,7 @@ class TestAccountLockout:
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",
@@ -312,7 +312,7 @@ class TestAccountLockout:
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",
@@ -326,7 +326,7 @@ class TestAccountLockout:
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",
@@ -342,7 +342,7 @@ class TestAccountLockout:
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",
@@ -358,7 +358,7 @@ class TestAccountLockout:
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",
@@ -379,7 +379,7 @@ class TestMFA:
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",
@@ -396,7 +396,7 @@ class TestMFA:
         encryptor = get_encryptor()
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",
@@ -412,7 +412,7 @@ class TestMFA:
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
-            email="test@medclaim.ai",
+            email="test@aetherahealthcare.com",
             password_hash=auth_service.hash_password("pass"),
             first_name="Test",
             last_name="User",

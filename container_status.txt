@@ -1,0 +1,58 @@
+=== Docker PS (all containers) === 
+CONTAINER ID   IMAGE                                 COMMAND                  CREATED        STATUS                            PORTS                                         NAMES
+49bc6c8f788e   rcm-ai-platform-nginx                 "/docker-entrypoint.…"   6 hours ago    Up 6 hours (healthy)              0.0.0.0:8088->80/tcp, [::]:8088->80/tcp       rcm-ai-platform-nginx-1
+a30b87f3f3f6   qdrant/qdrant:latest                  "./entrypoint.sh"        7 hours ago    Up 7 hours (healthy)              6333-6334/tcp                                 rcm-ai-platform-qdrant-1
+c5b8d850cb80   aethera-rcm-os-backend                "python -m uvicorn a…"   8 hours ago    Up 8 hours (healthy)              0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp   aethera-backend
+5366139c7e4d   aethera-rcm-os-worker                 "python -m celery -A…"   8 hours ago    Up 8 hours (unhealthy)            8000/tcp                                      aethera-worker
+09a540b04a99   aethera-rcm-os-frontend               "/docker-entrypoint.…"   8 hours ago    Up 8 hours (unhealthy)            0.0.0.0:8080->80/tcp, [::]:8080->80/tcp       aethera-frontend
+51d46b999b8c   postgres:15-alpine                    "docker-entrypoint.s…"   8 hours ago    Up 8 hours (healthy)              5432/tcp                                      aethera-postgres
+c11894ba3808   redis:7-alpine                        "docker-entrypoint.s…"   8 hours ago    Up 8 hours (healthy)              6379/tcp                                      aethera-redis
+78f9c634ecd2   ghcr.io/berriai/litellm:main-latest   "/bin/sh -c 'printf …"   9 hours ago    Up 9 hours                        127.0.0.1:4000->4000/tcp                      litellm-proxy
+c64910b6f7f6   workers-worker                        "bash -c 'sleep 5 &&…"   9 hours ago    Restarting (127) 31 seconds ago                                                 workers-worker-1
+b7a4d3407562   workers-beat                          "celery -A workers.c…"   9 hours ago    Created                                                                         workers-beat-1
+745392c903ce   postgres:15-alpine                    "docker-entrypoint.s…"   9 hours ago    Up 9 hours (healthy)              5432/tcp                                      workers-db-1
+f21d71b01acc   redis:7-alpine                        "docker-entrypoint.s…"   9 hours ago    Up 9 hours (healthy)              0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp   workers-redis-1
+79c33212cadc   cloudflare/cloudflared:latest         "cloudflared --no-au…"   10 hours ago   Up 6 hours                                                                      rcm-ai-platform-cloudflared-1
+cc55143f022a   rcm-ai-platform-celery-beat           "celery -A src.infra…"   10 hours ago   Up 10 hours (healthy)             8000/tcp                                      rcm-ai-platform-celery-beat-1
+f1162f2dc73d   rcm-ai-platform-celery-worker         "celery -A src.infra…"   10 hours ago   Up 10 hours (healthy)             8000/tcp                                      rcm-ai-platform-celery-worker-1
+e732cec222f2   rcm-ai-platform-api                   "gunicorn src.api.ma…"   10 hours ago   Up 7 hours (healthy)              8000/tcp                                      rcm-ai-platform-api-1
+1e5b44002a50   rcm-ai-platform-ai-agents             "gunicorn main:app -…"   10 hours ago   Created                                                                         rcm-ai-platform-ai-agents-1
+1bab4f37df0a   postgres:16-alpine                    "docker-entrypoint.s…"   10 hours ago   Up 10 hours (healthy)             5432/tcp                                      rcm-ai-platform-postgres-1
+cc58ae06d685   redis:7-alpine                        "docker-entrypoint.s…"   10 hours ago   Up 10 hours (healthy)             6379/tcp                                      rcm-ai-platform-redis-1
+6ec419186586   minio/minio:latest                    "/usr/bin/docker-ent…"   10 hours ago   Up 10 hours (healthy)             9000/tcp                                      rcm-ai-platform-minio-1
+5489e2604aae   cloudflare/cloudflared:latest         "cloudflared --no-au…"   7 days ago     Up 11 hours                                                                     aethera-admin-tunnel
+ 
+=== Docker Compose PS === 
+time="2026-05-27T17:01:57+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+NAME                              IMAGE                           COMMAND                  SERVICE         CREATED        STATUS                  PORTS
+rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.ma…"   api             10 hours ago   Up 7 hours (healthy)    8000/tcp
+rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infra…"   celery-beat     10 hours ago   Up 10 hours (healthy)   8000/tcp
+rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infra…"   celery-worker   10 hours ago   Up 10 hours (healthy)   8000/tcp
+rcm-ai-platform-cloudflared-1     cloudflare/cloudflared:latest   "cloudflared --no-au…"   cloudflared     10 hours ago   Up 6 hours              
+rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-ent…"   minio           10 hours ago   Up 10 hours (healthy)   9000/tcp
+rcm-ai-platform-nginx-1           rcm-ai-platform-nginx           "/docker-entrypoint.…"   nginx           6 hours ago    Up 6 hours (healthy)    0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.s…"   postgres        10 hours ago   Up 10 hours (healthy)   5432/tcp
+rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          7 hours ago    Up 7 hours (healthy)    6333-6334/tcp
+rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.s…"   redis           10 hours ago   Up 10 hours (healthy)   6379/tcp
+ 
+=== Container Names Only === 
+rcm-ai-platform-nginx-1
+rcm-ai-platform-qdrant-1
+aethera-backend
+aethera-worker
+aethera-frontend
+aethera-postgres
+aethera-redis
+litellm-proxy
+workers-worker-1
+workers-db-1
+workers-redis-1
+rcm-ai-platform-cloudflared-1
+rcm-ai-platform-celery-beat-1
+rcm-ai-platform-celery-worker-1
+rcm-ai-platform-api-1
+rcm-ai-platform-postgres-1
+rcm-ai-platform-redis-1
+rcm-ai-platform-minio-1
+aethera-admin-tunnel
+Done. 

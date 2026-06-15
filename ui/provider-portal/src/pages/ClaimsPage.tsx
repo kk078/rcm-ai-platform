@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FileText, Search } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse, safeNumber } from '../lib/apiHelpers';
 
 interface Claim {
   id: string;
@@ -14,31 +15,26 @@ interface Claim {
   timeline: { status: string; timestamp: string; note?: string }[];
 }
 
-interface ClaimsResponse {
-  items: Claim[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
 const STATUS_FLOW = ['draft', 'submitted', 'accepted', 'in_process', 'paid', 'denied'];
 
 export function ClaimsPage() {
   const [search, setSearch] = useState('');
 
-  const { data, isLoading } = useQuery<ClaimsResponse>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['provider-claims'],
     queryFn: () =>
       api
-        .get('/portal/claims/', { params: { page_size: 20 } })
+        .get('/portal/claims', { params: { page_size: 20 } })
         .then((r) => r.data),
   });
 
-  const filtered = data?.items.filter(
+  const data = normalizeListResponse<Claim>(rawData);
+
+  const filtered = data.items.filter(
     (c) =>
       !search ||
-      c.claim_number.toLowerCase().includes(search.toLowerCase()) ||
-      c.patient_name.toLowerCase().includes(search.toLowerCase()),
+      (c.claim_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (c.patient_name ?? '').toLowerCase().includes(search.toLowerCase()),
   );
 
   const statusStep = (status: string) => {
@@ -74,19 +70,19 @@ export function ClaimsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {filtered?.map((claim) => {
-            const currentStep = statusStep(claim.status);
+          {filtered.map((claim) => {
+            const currentStep = statusStep(claim.status ?? '');
             return (
               <div key={claim.id} className="rounded-xl border border-gray-200 bg-white p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="font-medium text-gray-900">{claim.claim_number}</h3>
+                    <h3 className="font-medium text-gray-900">{claim.claim_number ?? '—'}</h3>
                     <p className="text-sm text-gray-500">
-                      {claim.patient_name} · {claim.date_of_service} · {claim.payer_name}
+                      {claim.patient_name ?? '—'} · {claim.date_of_service ?? '—'} · {claim.payer_name ?? '—'}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-semibold text-gray-900">${claim.total_charge.toLocaleString()}</p>
+                    <p className="text-lg font-semibold text-gray-900">${safeNumber(claim.total_charge).toLocaleString()}</p>
                     <p className="text-xs text-gray-500">Total Charge</p>
                   </div>
                 </div>
@@ -106,14 +102,14 @@ export function ClaimsPage() {
                 </div>
 
                 {/* Timeline events */}
-                {claim.timeline && claim.timeline.length > 0 && (
+                {Array.isArray(claim.timeline) && claim.timeline.length > 0 && (
                   <div className="mt-4 space-y-2">
                     {claim.timeline.slice(-3).map((event, i) => (
                       <div key={i} className="flex items-center gap-2 text-sm text-gray-600">
                         <div className="h-1.5 w-1.5 rounded-full bg-brand-400" />
-                        <span>{event.status.replace('_', ' ')}</span>
+                        <span>{(event.status ?? '').replace('_', ' ')}</span>
                         <span className="text-gray-400">·</span>
-                        <span className="text-gray-400">{event.timestamp}</span>
+                        <span className="text-gray-400">{event.timestamp ?? ''}</span>
                         {event.note && <span className="text-gray-400">— {event.note}</span>}
                       </div>
                     ))}
@@ -122,7 +118,7 @@ export function ClaimsPage() {
               </div>
             );
           })}
-          {(!filtered?.length) && (
+          {filtered.length === 0 && (
             <div className="py-12 text-center text-sm text-gray-500">
               <FileText className="mx-auto mb-2 h-8 w-8 text-gray-300" />
               No claims found

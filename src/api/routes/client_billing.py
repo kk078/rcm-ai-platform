@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.infrastructure.database.session import get_db
 from src.infrastructure.database.models import ClientInvoice, Practice, ServiceAgreement, Claim
 from src.infrastructure.auth.middleware import get_current_user
+from src.api.schemas.common import PaginatedResponse
 
 router = APIRouter()
 
@@ -109,15 +110,15 @@ class ClientProfitability(BaseModel):
 
 async def _build_invoice_response(invoice: ClientInvoice, db: AsyncSession) -> InvoiceResponse:
     """Build an InvoiceResponse from a ClientInvoice ORM object."""
-    # Get practice name
+    # Always query practice_name explicitly — avoid touching lazy-loaded relationships in async context
     practice_name = ""
-    if invoice.practice:
-        practice_name = invoice.practice.practice_name or ""
-    else:
+    try:
         result = await db.execute(
             select(Practice.practice_name).where(Practice.id == invoice.practice_id)
         )
         practice_name = result.scalar_one_or_none() or ""
+    except Exception:
+        pass
 
     # Format billing period
     billing_period = f"{invoice.billing_period_start} to {invoice.billing_period_end}"
@@ -318,7 +319,7 @@ async def generate_all_invoices(
 
 # ── Invoice Management ───────────────────────────────────────────
 
-@router.get("/invoices", response_model=list[InvoiceResponse])
+@router.get("/invoices", response_model=PaginatedResponse[InvoiceResponse])
 async def list_invoices(
     practice_id: UUID | None = None,
     status: InvoiceStatus | None = None,
@@ -342,6 +343,12 @@ async def list_invoices(
 
     where_clause = and_(*conditions) if conditions else True
 
+    # Total count with the same filters
+    count_result = await db.execute(
+        select(func.count(ClientInvoice.id)).where(where_clause)
+    )
+    total = count_result.scalar() or 0
+
     offset = (page - 1) * page_size
     result = await db.execute(
         select(ClientInvoice)
@@ -356,7 +363,7 @@ async def list_invoices(
     for inv in invoices:
         resp = await _build_invoice_response(inv, db)
         responses.append(resp)
-    return responses
+    return {"items": responses, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
@@ -536,37 +543,39 @@ async def revenue_dashboard(
     - Total invoiced, collected, outstanding, overdue
     - Revenue by fee model
     - Top clients by revenue
+    When no period is given (or the period has no data), returns all-time totals.
     """
     if period is None:
-        period = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m")
+        period = "all"
 
-    # Parse period to get date range
-    year, month = period.split("-")
-    period_start = date(int(year), int(month), 1)
-    if int(month) == 12:
-        period_end = date(int(year) + 1, 1, 1)
-    else:
-        period_end = date(int(year), int(month) + 1, 1)
-
-    # Total invoiced for the period
-    invoiced_q = await db.execute(
-        select(func.coalesce(func.sum(ClientInvoice.total_due), 0)).where(
-            and_(
+    # Build optional date filter — only applied when a specific YYYY-MM is requested
+    date_conditions: list = []
+    if period != "all":
+        try:
+            year, month = period.split("-")
+            period_start = date(int(year), int(month), 1)
+            period_end = date(int(year) + 1, 1, 1) if int(month) == 12 else date(int(year), int(month) + 1, 1)
+            date_conditions = [
                 ClientInvoice.billing_period_start >= period_start,
                 ClientInvoice.billing_period_start < period_end,
-            )
-        )
+            ]
+        except Exception:
+            pass  # fall back to all-time
+
+    def _where(*extra):
+        conds = list(date_conditions) + list(extra)
+        return and_(*conds) if conds else True
+
+    # Total invoiced
+    invoiced_q = await db.execute(
+        select(func.coalesce(func.sum(ClientInvoice.total_due), 0)).where(_where())
     )
     total_invoiced = float(invoiced_q.scalar() or 0)
 
     # Total collected
     collected_q = await db.execute(
         select(func.coalesce(func.sum(ClientInvoice.paid_amount), 0)).where(
-            and_(
-                ClientInvoice.billing_period_start >= period_start,
-                ClientInvoice.billing_period_start < period_end,
-                ClientInvoice.status == "paid",
-            )
+            _where(ClientInvoice.status == "paid")
         )
     )
     total_collected = float(collected_q.scalar() or 0)
@@ -574,11 +583,7 @@ async def revenue_dashboard(
     # Outstanding
     outstanding_q = await db.execute(
         select(func.coalesce(func.sum(ClientInvoice.total_due - func.coalesce(ClientInvoice.paid_amount, 0)), 0)).where(
-            and_(
-                ClientInvoice.billing_period_start >= period_start,
-                ClientInvoice.billing_period_start < period_end,
-                ClientInvoice.status.in_(["sent", "viewed"]),
-            )
+            _where(ClientInvoice.status.in_(["sent", "viewed"]))
         )
     )
     total_outstanding = float(outstanding_q.scalar() or 0)
@@ -586,23 +591,14 @@ async def revenue_dashboard(
     # Overdue
     overdue_q = await db.execute(
         select(func.coalesce(func.sum(ClientInvoice.total_due), 0)).where(
-            and_(
-                ClientInvoice.billing_period_start >= period_start,
-                ClientInvoice.billing_period_start < period_end,
-                ClientInvoice.status == "overdue",
-            )
+            _where(ClientInvoice.status == "overdue")
         )
     )
     total_overdue = float(overdue_q.scalar() or 0)
 
     # Client count
     client_count_q = await db.execute(
-        select(func.count(func.distinct(ClientInvoice.practice_id))).where(
-            and_(
-                ClientInvoice.billing_period_start >= period_start,
-                ClientInvoice.billing_period_start < period_end,
-            )
-        )
+        select(func.count(func.distinct(ClientInvoice.practice_id))).where(_where())
     )
     client_count = client_count_q.scalar() or 0
 
@@ -611,10 +607,7 @@ async def revenue_dashboard(
     # Revenue by fee model
     fee_model_q = await db.execute(
         select(ClientInvoice.fee_model_used, func.coalesce(func.sum(ClientInvoice.total_due), 0)).where(
-            and_(
-                ClientInvoice.billing_period_start >= period_start,
-                ClientInvoice.billing_period_start < period_end,
-            )
+            _where()
         ).group_by(ClientInvoice.fee_model_used)
     )
     revenue_by_fee_model = {row[0]: float(row[1]) for row in fee_model_q.all()}
@@ -627,12 +620,7 @@ async def revenue_dashboard(
             func.coalesce(func.sum(ClientInvoice.total_collections), 0).label("collections"),
         )
         .join(Practice, ClientInvoice.practice_id == Practice.id)
-        .where(
-            and_(
-                ClientInvoice.billing_period_start >= period_start,
-                ClientInvoice.billing_period_start < period_end,
-            )
-        )
+        .where(_where())
         .group_by(Practice.practice_name)
         .order_by(func.sum(ClientInvoice.total_due).desc())
         .limit(10)
@@ -745,8 +733,11 @@ async def overdue_invoices(
             days_overdue = (now.date() - inv.due_date).days
 
         practice_name = ""
-        if inv.practice:
-            practice_name = inv.practice.practice_name or ""
+        try:
+            pn_r = await db.execute(select(Practice.practice_name).where(Practice.id == inv.practice_id))
+            practice_name = pn_r.scalar_one_or_none() or ""
+        except Exception:
+            pass
 
         overdue_list.append({
             "id": str(inv.id),

@@ -1,131 +1,232 @@
 version: "3.9"
 
+# ── Aethera AI — Development Compose ──────────────────────────────────────────
+# Usage: docker compose up -d
+# API: http://localhost:8000 | Docs: http://localhost:8000/docs
+# Staff Portal: http://localhost:8080 | Provider Portal: http://localhost:8080/portal/
+
+networks:
+  aethera-network:
+    driver: bridge
+
+volumes:
+  aethera_postgres_data:
+  aethera_redis_data:
+  aethera_qdrant_data:
+  aethera_minio_data:
+  aethera_grafana_data:
+
 services:
-  # ── Application ────────────────────────────────────────────
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aethera_db}
+      POSTGRES_USER: ${POSTGRES_USER:-aethera}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aethera_dev_password}
+    volumes:
+      - aethera_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aethera} -d ${POSTGRES_DB:-aethera_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - aethera-network
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - aethera_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - aethera-network
+
+  # ── Qdrant (Vector DB) ────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - aethera_qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /proc/self/cgroup || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - aethera-network
+
+  # ── MinIO (Object Storage) ────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aethera}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aethera_dev_password}
+    volumes:
+      - aethera_minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - aethera-network
+
+  # ── API Server (dev: hot-reload) ──────────────────────────────────────────
   api:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      PYTHONPATH: /app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./src:/app/src
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aethera-network
 
+  # ── AI Agent Service (autonomous billing agents on port 8001) ────────────
+  ai-agents:
+    build:
+      context: ../AIAgents
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file: ../AIAgents/.env
+    environment:
+      AI_AGENT_CONFIDENCE_THRESHOLD: ${AI_AGENT_CONFIDENCE_THRESHOLD:-0.7}
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8001
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aethera-network
+
+  # ── Celery Worker ─────────────────────────────────────────────────────────
   celery-worker:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     env_file: .env
     depends_on:
-      - redis
-      - postgres
-    command: celery -A src.infrastructure.queue.celery_app worker -l info -Q coding,billing,payments,denials,edi --concurrency=4
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      celery -A src.infrastructure.queue.celery_app worker
+      -l info -Q coding,billing,payments,denials,edi,celery,ai_dispatch
+      --concurrency=4
+    healthcheck:
+      # Override the image's inherited HTTP (:8000) healthcheck — meaningless for a worker.
+      test: ["CMD-SHELL", "celery -A src.infrastructure.queue.celery_app inspect ping -t 10 || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    networks:
+      - aethera-network
 
+  # ── Celery Beat (Scheduler) ───────────────────────────────────────────────
   celery-beat:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     env_file: .env
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     command: celery -A src.infrastructure.queue.celery_app beat -l info
+    healthcheck:
+      disable: true   # beat has no HTTP/inspect endpoint; inherited :8000 check is invalid
+    networks:
+      - aethera-network
 
-  # ── Frontend ───────────────────────────────────────────────
-  frontend:
+  # ── Nginx (Reverse Proxy + SPA) ───────────────────────────────────────────
+  nginx:
     build:
-      context: ./ui
+      context: ./config/nginx
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8080:80"
     volumes:
-      - ./ui/src:/app/src
-    environment:
-      - VITE_API_URL=http://localhost:8000
-
-  # ── Infrastructure ─────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: medclaim_db
-      POSTGRES_USER: medclaim
-      POSTGRES_PASSWORD: password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./ui/staff-portal/dist:/app/frontend:ro
+      - ./ui/provider-portal/dist:/app/provider-portal:ro
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U medclaim"]
-      interval: 5s
+      test: ["CMD-SHELL", "test -f /proc/self/cgroup || exit 1"]
+      interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 15s
+    networks:
+      - aethera-network
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    environment:
-      QDRANT__SERVICE__GRPC_PORT: 6334
-
-  minio:
-    image: minio/minio:latest
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
-
-  # ── Monitoring (optional) ──────────────────────────────────
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
-    profiles: ["monitoring"]
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3001:3000"
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-    profiles: ["monitoring"]
-
-volumes:
-  postgres_data:
-  redis_data:
-  qdrant_data:
-  minio_data:
-  grafana_data:
+  # ── Cloudflare Tunnel (exposes rcm.aetherahealthcare.com → nginx) ─────────
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      nginx:
+        condition: service_healthy
+    networks:
+      - aethera-network

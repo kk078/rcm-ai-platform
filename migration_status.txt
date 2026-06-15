@@ -1,0 +1,5 @@
+Error response from daemon: No such container: rcm-api
+Exit code: 1 
+Error response from daemon: No such container: rcm-api
+Error response from daemon: No such container: rcm-api
+Upgrade exit code: 1 

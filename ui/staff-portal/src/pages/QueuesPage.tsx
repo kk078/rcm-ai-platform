@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ListTodo, Filter, UserPlus, CheckCircle2 } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse } from '../lib/apiHelpers';
 
 interface QueueItem {
   id: string;
@@ -34,7 +35,7 @@ export function QueuesPage() {
   const [status, setStatus] = useState<string>('all');
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery<QueueResponse>({
+  const { data: rawData, isLoading } = useQuery<QueueResponse>({
     queryKey: ['queue-items', priority, status, page],
     queryFn: () =>
       api
@@ -44,13 +45,17 @@ export function QueuesPage() {
         .then((r) => r.data),
   });
 
+  const data = normalizeListResponse<QueueItem>(rawData);
+  const items = data.items;
+  const total = data.total;
+
   const claimMutation = useMutation({
-    mutationFn: (itemId: string) => api.post(`/queues/${itemId}/claim`),
+    mutationFn: (itemId: string) => api.post(`/queues/queue/${itemId}/claim`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['queue-items'] }),
   });
 
   const completeMutation = useMutation({
-    mutationFn: (itemId: string) => api.post(`/queues/${itemId}/complete`),
+    mutationFn: (itemId: string) => api.post(`/queues/queue/${itemId}/complete`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['queue-items'] }),
   });
 
@@ -69,7 +74,7 @@ export function QueuesPage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Work Queue</h1>
-          <p className="mt-1 text-sm text-gray-500">{data?.total ?? 0} items</p>
+          <p className="mt-1 text-sm text-gray-500">{total} items</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -117,7 +122,7 @@ export function QueuesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {data?.items.map((item) => (
+              {items.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.item_type}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{item.patient_name}</td>
@@ -151,7 +156,7 @@ export function QueuesPage() {
                   </td>
                 </tr>
               ))}
-              {(!data?.items.length) && (
+              {items.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
                     <ListTodo className="mx-auto mb-2 h-8 w-8 text-gray-300" />
@@ -164,10 +169,10 @@ export function QueuesPage() {
         </div>
       )}
 
-      {data && data.total > 20 && (
+      {total > 20 && (
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-gray-500">
-            Showing {(page - 1) * 20 + 1}–{Math.min(page * 20, data.total)} of {data.total}
+            Showing {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}
           </p>
           <div className="flex gap-2">
             <button
@@ -179,7 +184,7 @@ export function QueuesPage() {
             </button>
             <button
               onClick={() => setPage((p) => p + 1)}
-              disabled={page * 20 >= data.total}
+              disabled={page * 20 >= total}
               className="rounded-lg border border-gray-300 px-3 py-1 text-sm disabled:opacity-50"
             >
               Next

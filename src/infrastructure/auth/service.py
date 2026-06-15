@@ -4,17 +4,21 @@ Authentication service — handles login, MFA, account lockout, and token lifecy
 All password operations use bcrypt (work factor 12).
 MFA uses TOTP (RFC 6238) via pyotp.
 Account lockout: 5 failed attempts → 30-minute lock.
+MFA challenges backed by Redis DB 3 with 5-minute TTL.
+Backup codes: 10 single-use codes, hashed with bcrypt rounds=10.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import bcrypt
 import pyotp
+import redis.asyncio as aioredis
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +48,8 @@ settings = get_settings()
 # Account lockout constants
 MAX_LOGIN_ATTEMPTS = settings.max_login_attempts
 LOCKOUT_DURATION = timedelta(minutes=settings.lockout_duration_minutes)
-MFA_CHALLENGE_TTL = timedelta(minutes=5)
+MFA_CHALLENGE_TTL = 300  # 5 minutes in seconds
+MFA_CHALLENGE_KEY_PREFIX = "mfa_challenge:"
 
 
 class AuthServiceError(Exception):
@@ -80,9 +85,18 @@ class AuthService:
     """Handles all authentication operations."""
 
     def __init__(self) -> None:
-        # In-memory MFA challenge store: challenge_id -> {user_id, secret, expires_at}
-        # Production should use Redis with TTL
-        self._mfa_challenges: dict[UUID, dict] = {}
+        # Redis client for MFA challenges (DB 3), lazily initialized
+        self._redis: aioredis.Redis | None = None
+
+    async def _get_redis(self) -> aioredis.Redis:
+        """Return (or create) the Redis connection for MFA challenges."""
+        if self._redis is None:
+            self._redis = await aioredis.from_url(
+                settings.redis_mfa_url,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+        return self._redis
 
     # ── Password hashing ───────────────────────────────────────────────
 
@@ -132,12 +146,23 @@ class AuthService:
     def setup_mfa(self, user: User) -> MFASetupResponse:
         """
         Generate a TOTP secret and QR code URI for MFA setup.
-        The secret is not enabled until verify_mfa_setup is called.
+        Generates 10 backup codes, hashes each with bcrypt rounds=10,
+        and stores the JSON list of hashes in user.mfa_backup_codes.
+        The TOTP secret is not enabled until verify_mfa_setup is called.
         """
         secret = pyotp.random_base32()
         totp = pyotp.TOTP(secret)
         qr_uri = totp.provisioning_uri(name=user.email, issuer_name=settings.mfa_issuer)
-        backup_codes = [secrets.token_hex(4).upper() for _ in range(10)]
+
+        # Generate 10 plaintext backup codes
+        plaintext_codes = [secrets.token_hex(4).upper() for _ in range(10)]
+
+        # Hash each with bcrypt rounds=10 and store as JSON list
+        hashed_codes = []
+        for code in plaintext_codes:
+            hashed = bcrypt.hashpw(code.encode("utf-8"), bcrypt.gensalt(rounds=10)).decode("utf-8")
+            hashed_codes.append(hashed)
+        user.mfa_backup_codes = json.dumps(hashed_codes)
 
         # Store secret temporarily (not yet enabled) — encrypt it
         encryptor = get_encryptor()
@@ -146,7 +171,7 @@ class AuthService:
         return MFASetupResponse(
             secret=secret,
             qr_code_uri=qr_uri,
-            backup_codes=backup_codes,
+            backup_codes=plaintext_codes,
         )
 
     @staticmethod
@@ -176,64 +201,98 @@ class AuthService:
         totp = pyotp.TOTP(secret)
         return totp.verify(code, valid_window=1)
 
-    def verify_backup_code(self, user: User, code: str) -> bool:
+    @staticmethod
+    def verify_backup_code(user: User, code: str) -> bool:
         """
-        Verify a backup code. In production, backup codes should be hashed
-        and stored in the database. For now, this is a placeholder.
+        Verify a backup code using bcrypt.checkpw().
+        The used code is removed (single-use) by updating user.mfa_backup_codes.
+        Returns True if a matching code was found and consumed, False otherwise.
         """
-        # Backup codes are returned at setup time; a production implementation
-        # would hash them with bcrypt and store in a separate table.
+        if not user.mfa_backup_codes:
+            return False
+
+        try:
+            hashed_codes: list[str] = json.loads(user.mfa_backup_codes)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("mfa_backup_codes_parse_error", user_id=str(user.id))
+            return False
+
+        code_bytes = code.encode("utf-8")
+        for i, hashed in enumerate(hashed_codes):
+            try:
+                if bcrypt.checkpw(code_bytes, hashed.encode("utf-8")):
+                    # Remove used code (single-use)
+                    hashed_codes.pop(i)
+                    user.mfa_backup_codes = json.dumps(hashed_codes)
+                    logger.info("mfa_backup_code_used", user_id=str(user.id), remaining=len(hashed_codes))
+                    return True
+            except Exception:
+                continue
+
         return False
 
     # ── MFA challenge flow ──────────────────────────────────────────────
 
-    def create_mfa_challenge(self, user: User) -> MFAChallengeResponse:
+    async def create_mfa_challenge(self, user: User) -> MFAChallengeResponse:
         """
         Create an MFA challenge for a user who has MFA enabled.
-        The challenge_id is stored in memory (or Redis in production)
-        and must be used within 5 minutes.
+        Stores the challenge in Redis DB 3 with a 5-minute TTL.
         """
         challenge_id = uuid4()
-        self._mfa_challenges[challenge_id] = {
-            "user_id": user.id,
-            "expires_at": datetime.now(timezone.utc).replace(tzinfo=None) + MFA_CHALLENGE_TTL,
-        }
+        redis = await self._get_redis()
+
+        key = f"{MFA_CHALLENGE_KEY_PREFIX}{challenge_id}"
+        payload = json.dumps({"user_id": str(user.id)})
+        await redis.set(key, payload, ex=MFA_CHALLENGE_TTL)
+
         logger.debug("mfa_challenge_created", challenge_id=str(challenge_id), user_id=str(user.id))
         return MFAChallengeResponse(
             mfa_challenge_id=challenge_id,
             message="MFA verification required",
         )
 
-    def verify_mfa_challenge(self, challenge_id: UUID, code: str, db: AsyncSession) -> MFAVerifyResponse:
+    async def verify_mfa_challenge(self, challenge_id: UUID, code: str, db: AsyncSession) -> MFAVerifyResponse:
         """
-        Verify an MFA challenge. Returns tokens on success.
-        Raises ChallengeExpiredError if the challenge has expired.
+        Verify an MFA challenge. Tries TOTP first, then backup codes.
+        Returns tokens on success.
+        Raises ChallengeExpiredError if the challenge has expired or not found.
         Raises InvalidMFAError if the code is wrong.
         """
         from src.infrastructure.database.models import User
 
-        challenge = self._mfa_challenges.get(challenge_id)
-        if not challenge:
+        redis = await self._get_redis()
+        key = f"{MFA_CHALLENGE_KEY_PREFIX}{challenge_id}"
+
+        raw = await redis.get(key)
+        if not raw:
             raise ChallengeExpiredError("MFA challenge not found or expired")
 
-        if datetime.now(timezone.utc).replace(tzinfo=None) > challenge["expires_at"]:
-            del self._mfa_challenges[challenge_id]
-            raise ChallengeExpiredError("MFA challenge has expired")
+        try:
+            challenge = json.loads(raw)
+        except json.JSONDecodeError:
+            await redis.delete(key)
+            raise ChallengeExpiredError("MFA challenge data corrupted")
 
-        user_id = challenge["user_id"]
+        user_id = UUID(challenge["user_id"])
 
         # Load user
-        result = db.execute(select(User).where(User.id == user_id))
+        result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
+            await redis.delete(key)
             raise InvalidCredentialsError("User not found")
 
-        # Verify TOTP
-        if not self.verify_totp_code(user.mfa_secret, code):
+        # Try TOTP first, then backup codes
+        totp_valid = self.verify_totp_code(user.mfa_secret, code)
+        backup_valid = False
+        if not totp_valid:
+            backup_valid = self.verify_backup_code(user, code)
+
+        if not totp_valid and not backup_valid:
             raise InvalidMFAError("Invalid MFA code")
 
-        # Clear challenge
-        del self._mfa_challenges[challenge_id]
+        # Clear challenge from Redis
+        await redis.delete(key)
 
         # Issue tokens
         self.reset_failed_logins(user)
@@ -291,7 +350,7 @@ class AuthService:
             raise InvalidCredentialsError("Invalid email or password")
 
         if user.mfa_enabled:
-            challenge = self.create_mfa_challenge(user)
+            challenge = await self.create_mfa_challenge(user)
             return LoginResponse(
                 access_token="",
                 refresh_token="",

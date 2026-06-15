@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CreditCard, Upload, Search } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse, safeNumber, formatDate } from '../lib/apiHelpers';
 
 interface PaymentBatch {
   id: string;
@@ -15,24 +16,19 @@ interface PaymentBatch {
   claim_count: number;
 }
 
-interface BatchesResponse {
-  items: PaymentBatch[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
 export function PaymentsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
 
-  const { data, isLoading } = useQuery<BatchesResponse>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['payment-batches'],
     queryFn: () =>
       api
-        .get('/payments/batches/', { params: { page_size: 20 } })
+        .get('/payments/batches', { params: { page_size: 20 } })
         .then((r) => r.data),
   });
+
+  const data = normalizeListResponse<PaymentBatch>(rawData);
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => {
@@ -45,6 +41,9 @@ export function PaymentsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['payment-batches'] }),
   });
 
+  const fmtCurrency = (v: number) =>
+    '$' + safeNumber(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   const statusBadge = (s: string) => {
     const colors: Record<string, string> = {
       pending: 'bg-gray-100 text-gray-700',
@@ -55,8 +54,8 @@ export function PaymentsPage() {
     return colors[s] || 'bg-gray-100 text-gray-700';
   };
 
-  const filtered = data?.items.filter(
-    (b) => !search || b.payer_name.toLowerCase().includes(search.toLowerCase()) || b.batch_id.toLowerCase().includes(search.toLowerCase()),
+  const filtered = data.items.filter(
+    (b) => !search || (b.payer_name ?? '').toLowerCase().includes(search.toLowerCase()) || (b.batch_id ?? '').toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
@@ -126,22 +125,22 @@ export function PaymentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered?.map((batch) => (
+              {filtered.map((batch) => (
                 <tr key={batch.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-medium text-brand-600">{batch.batch_id}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900">{batch.payer_name}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">${batch.total_amount.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{batch.claim_count}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-brand-600">{batch.batch_id ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{batch.payer_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{fmtCurrency(batch.total_amount)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{safeNumber(batch.claim_count)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{batch.check_number ?? '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(batch.status)}`}>
                       {batch.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{batch.created_at}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{formatDate(batch.created_at)}</td>
                 </tr>
               ))}
-              {(!filtered?.length) && (
+              {filtered.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
                     <CreditCard className="mx-auto mb-2 h-8 w-8 text-gray-300" />

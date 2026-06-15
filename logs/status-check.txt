@@ -1,0 +1,11 @@
+time="2026-05-27T10:56:30+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+NAME                              IMAGE                           COMMAND                  SERVICE         CREATED          STATUS                          PORTS
+rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.ma…"   api             4 hours ago      Up 43 minutes (healthy)         8000/tcp
+rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infra…"   celery-beat     4 hours ago      Up 4 hours (healthy)            8000/tcp
+rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infra…"   celery-worker   4 hours ago      Up 4 hours (healthy)            8000/tcp
+rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-ent…"   minio           4 hours ago      Up 4 hours (healthy)            9000/tcp
+rcm-ai-platform-nginx-1           rcm-ai-platform-nginx           "/docker-entrypoint.…"   nginx           4 hours ago      Restarting (1) 40 seconds ago   
+rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.s…"   postgres        4 hours ago      Up 4 hours (healthy)            5432/tcp
+rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          35 minutes ago   Up 35 minutes (healthy)         6333-6334/tcp
+rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.s…"   redis           4 hours ago      Up 4 hours (healthy)            6379/tcp
+time="2026-05-27T10:56:31+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"

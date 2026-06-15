@@ -16,6 +16,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: dict
+    must_change_password: bool = False
 
 
 class RefreshRequest(BaseModel):

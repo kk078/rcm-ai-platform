@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.models import (
@@ -19,10 +20,14 @@ from src.infrastructure.database.models import (
     ClaimDiagnosis,
     ClaimScrubResult,
     Encounter,
+    Patient,
+    Payer,
+    Practice,
     utcnow,
 )
 from src.infrastructure.database.session import get_db
 from src.infrastructure.auth.middleware import get_current_user
+from src.api.schemas.common import PaginatedResponse
 
 router = APIRouter()
 
@@ -74,12 +79,48 @@ class ClaimResponse(BaseModel):
     status: ClaimStatus
     total_charge: float
     total_paid: float
+    total_adjusted: float | None = None
+    patient_responsibility: float | None = None
     scrub_score: int | None
     denial_risk_score: float | None
     submission_date: datetime | None
     created_at: datetime
+    # Joined display fields
+    patient_name: str | None = None
+    practice_name: str | None = None
+    payer_name: str | None = None
+    date_of_service: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+def _build_claim_response(claim: Claim) -> ClaimResponse:
+    """Build a ClaimResponse with joined display fields from loaded relationships."""
+    patient_name = None
+    if claim.patient:
+        patient_name = f"{claim.patient.first_name} {claim.patient.last_name}"
+
+    practice_name = None
+    if claim.practice:
+        practice_name = claim.practice.practice_name
+
+    payer_name = None
+    if claim.payer:
+        payer_name = claim.payer.payer_name
+
+    # DOS from first claim line
+    date_of_service = None
+    if claim.lines:
+        first_line = min(claim.lines, key=lambda l: l.service_date_from or date.max)
+        if first_line.service_date_from:
+            date_of_service = str(first_line.service_date_from)
+
+    r = ClaimResponse.model_validate(claim)
+    r.patient_name = patient_name
+    r.practice_name = practice_name
+    r.payer_name = payer_name
+    r.date_of_service = date_of_service
+    return r
 
 
 class ScrubResult(BaseModel):
@@ -212,7 +253,7 @@ async def create_claim(
     return ClaimResponse.model_validate(new_claim)
 
 
-@router.get("/", response_model=list[ClaimResponse])
+@router.get("/")
 async def list_claims(
     status: ClaimStatus | None = None,
     payer_id: UUID | None = None,
@@ -225,18 +266,18 @@ async def list_claims(
     current_user: dict = Depends(get_current_user),
 ):
     """List claims with filtering and pagination."""
-    query = select(Claim)
-
+    # Build base filter conditions (shared by count and items queries)
+    filters = []
     if status is not None:
-        query = query.where(Claim.status == status.value)
+        filters.append(Claim.status == status.value)
     if payer_id is not None:
-        query = query.where(Claim.payer_id == payer_id)
+        filters.append(Claim.payer_id == payer_id)
     if patient_id is not None:
-        query = query.where(Claim.patient_id == patient_id)
+        filters.append(Claim.patient_id == patient_id)
     if date_from is not None:
-        query = query.where(Claim.created_at >= datetime.combine(date_from, datetime.min.time()))
+        filters.append(Claim.created_at >= datetime.combine(date_from, datetime.min.time()))
     if date_to is not None:
-        query = query.where(Claim.created_at <= datetime.combine(date_to, datetime.max.time()))
+        filters.append(Claim.created_at <= datetime.combine(date_to, datetime.max.time()))
 
     # Filter by practice for non-admin users
     practice_id = current_user.get("practice_id")
@@ -245,19 +286,36 @@ async def list_claims(
     internal_role = current_user.get("internal_role")
 
     if user_type == "provider" and practice_id:
-        query = query.where(Claim.practice_id == practice_id)
+        filters.append(Claim.practice_id == practice_id)
     elif user_type == "internal" and internal_role not in ("company_admin", "qa_reviewer"):
         if assigned_practice_ids:
-            query = query.where(Claim.practice_id.in_(assigned_practice_ids))
+            filters.append(Claim.practice_id.in_(assigned_practice_ids))
 
-    # Pagination
+    # Total count
+    count_result = await db.execute(select(func.count(Claim.id)).where(*filters))
+    total = count_result.scalar_one()
+
+    # Paginated items with joined relationships
     offset = (page - 1) * page_size
-    query = query.order_by(Claim.created_at.desc()).offset(offset).limit(page_size)
+    query = (
+        select(Claim)
+        .where(*filters)
+        .options(
+            selectinload(Claim.patient),
+            selectinload(Claim.payer),
+            selectinload(Claim.practice),
+            selectinload(Claim.lines),
+        )
+        .order_by(Claim.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
 
     result = await db.execute(query)
     claims = result.scalars().all()
+    responses = [_build_claim_response(c) for c in claims]
 
-    return [ClaimResponse.model_validate(c) for c in claims]
+    return {"items": responses, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/{claim_id}", response_model=ClaimResponse)
@@ -267,11 +325,21 @@ async def get_claim(
     current_user: dict = Depends(get_current_user),
 ):
     """Get claim details including lines, diagnoses, and history."""
-    result = await db.execute(select(Claim).where(Claim.id == claim_id))
+    result = await db.execute(
+        select(Claim)
+        .where(Claim.id == claim_id)
+        .options(
+            selectinload(Claim.patient),
+            selectinload(Claim.payer),
+            selectinload(Claim.practice),
+            selectinload(Claim.lines),
+            selectinload(Claim.diagnoses),
+        )
+    )
     claim = result.scalar_one_or_none()
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
-    return ClaimResponse.model_validate(claim)
+    return _build_claim_response(claim)
 
 
 @router.post("/{claim_id}/scrub", response_model=ScrubResponse)

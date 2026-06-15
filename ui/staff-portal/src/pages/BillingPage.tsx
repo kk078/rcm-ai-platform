@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Receipt, DollarSign, TrendingUp, AlertTriangle } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse, safeNumber, formatDate } from '../lib/apiHelpers';
 
 interface RevenueDashboard {
   period: string;
@@ -17,8 +18,8 @@ interface RevenueDashboard {
 interface Invoice {
   id: string;
   invoice_number: string;
-  client_name: string;
-  amount: number;
+  practice_name: string;
+  total_due: number;
   status: string;
   due_date: string;
   created_at: string;
@@ -30,10 +31,13 @@ export function BillingPage() {
     queryFn: () => api.get('/billing/revenue/dashboard').then((r) => r.data),
   });
 
-  const { data: invoices, isLoading: invLoading } = useQuery<{ items: Invoice[] }>({
+  const { data: rawInvoices, isLoading: invLoading } = useQuery({
     queryKey: ['invoices'],
-    queryFn: () => api.get('/billing/invoices/', { params: { page_size: 10 } }).then((r) => r.data),
+    queryFn: () => api.get('/billing/invoices', { params: { page_size: 10 } }).then((r) => r.data),
   });
+
+  const invoicesData = normalizeListResponse<Invoice>(rawInvoices);
+  const invoices = invoicesData.items;
 
   const statusBadge = (s: string) => {
     const colors: Record<string, string> = {
@@ -68,7 +72,7 @@ export function BillingPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Total Revenue</p>
-                <p className="text-xl font-semibold text-gray-900">${dashboard?.total_invoiced.toLocaleString()}</p>
+                <p className="text-xl font-semibold text-gray-900">${safeNumber(dashboard?.total_invoiced).toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -79,7 +83,7 @@ export function BillingPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Collected This Month</p>
-                <p className="text-xl font-semibold text-gray-900">${dashboard?.total_collected.toLocaleString()}</p>
+                <p className="text-xl font-semibold text-gray-900">${safeNumber(dashboard?.total_collected).toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -90,7 +94,7 @@ export function BillingPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Outstanding</p>
-                <p className="text-xl font-semibold text-gray-900">${dashboard?.total_outstanding.toLocaleString()}</p>
+                <p className="text-xl font-semibold text-gray-900">${safeNumber(dashboard?.total_outstanding).toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -101,7 +105,7 @@ export function BillingPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Overdue</p>
-                <p className="text-xl font-semibold text-gray-900">{dashboard?.total_overdue.toLocaleString()}</p>
+                <p className="text-xl font-semibold text-gray-900">${safeNumber(dashboard?.total_overdue).toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -132,20 +136,27 @@ export function BillingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {invoices?.items.map((inv) => (
+              {invoices.map((inv) => (
                 <tr key={inv.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-medium text-brand-600">{inv.invoice_number}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900">{inv.client_name}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">${inv.amount.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-brand-600">{inv.invoice_number ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{inv.practice_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">${safeNumber(inv.total_due).toLocaleString()}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(inv.status)}`}>
-                      {inv.status}
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(inv.status ?? '')}`}>
+                      {inv.status ?? '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{inv.due_date}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{inv.created_at}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{formatDate(inv.due_date)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{formatDate(inv.created_at)}</td>
                 </tr>
               ))}
+              {invoices.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                    No invoices found
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -8,6 +8,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -139,14 +140,26 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     await db.commit()
 
+    # Fetch practice_name if this is a provider user with a practice
+    practice_name = None
+    if user.practice_id:
+        from src.infrastructure.database.models import Practice
+        practice_result = await db.execute(
+            select(Practice.practice_name).where(Practice.id == user.practice_id)
+        )
+        practice_name = practice_result.scalar_one_or_none()
+
     user_info = {
         "id": str(user.id),
         "email": user.email,
         "full_name": f"{user.first_name} {user.last_name}",
+        "first_name": user.first_name,
+        "last_name": user.last_name,
         "user_type": user.user_type,
         "internal_role": user.internal_role,
         "provider_role": user.provider_role,
         "practice_id": str(user.practice_id) if user.practice_id else None,
+        "practice_name": practice_name,
         "assigned_practices": [str(pid) for pid in (token_data.assigned_practice_ids or [])],
     }
 
@@ -155,6 +168,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         refresh_token=refresh_token,
         token_type="bearer",
         user=user_info,
+        must_change_password=getattr(user, 'must_change_password', False),
     )
 
 
@@ -264,4 +278,100 @@ async def verify_mfa_setup(body: MFAVerifyRequest, current_user: dict = Depends(
         )
 
     await db.commit()
-    return MessageResponse(message="MFA has been enabled successfully.")
+    logger.info("mfa_enabled", user_id=str(current_user.get("user_id")))
+    return MessageResponse(message="MFA has been enabled on your account.")
+
+
+# ── Update Profile (PATCH /me) ────────────────────────────────────────────
+
+class UpdateProfileRequest(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+
+
+class ProfileResponse(BaseModel):
+    id: str
+    email: str
+    first_name: str
+    last_name: str
+    user_type: str
+    internal_role: str | None = None
+    mfa_enabled: bool
+
+    class Config:
+        from_attributes = True
+
+
+@router.patch("/me", response_model=ProfileResponse)
+async def update_profile(
+    body: UpdateProfileRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the authenticated user's profile (first/last name)."""
+    from src.infrastructure.database.models import User
+
+    result = await db.execute(select(User).where(User.id == current_user["user_id"]))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if body.first_name is not None:
+        user.first_name = body.first_name.strip()
+    if body.last_name is not None:
+        user.last_name = body.last_name.strip()
+    await db.commit()
+    await db.refresh(user)
+
+    logger.info("profile_updated", user_id=str(current_user.get("user_id")))
+    return ProfileResponse(
+        id=str(user.id),
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        user_type=user.user_type,
+        internal_role=getattr(user, "internal_role", None),
+        mfa_enabled=user.mfa_enabled,
+    )
+
+
+# ── Change Password ──────────────────────────────────────────────────────
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password", response_model=MessageResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the authenticated user's password. Clears must_change_password flag."""
+    from src.infrastructure.database.models import User
+
+    result = await db.execute(select(User).where(User.id == current_user["user_id"]))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not auth_service.verify_password(body.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+
+    if len(body.new_password) < 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 10 characters.",
+        )
+
+    user.password_hash = auth_service.hash_password(body.new_password)
+    user.must_change_password = False
+    user.password_changed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    await db.commit()
+
+    logger.info("password_changed", user_id=str(current_user.get("user_id")))
+    return MessageResponse(message="Password changed successfully.")

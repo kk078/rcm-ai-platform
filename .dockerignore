@@ -1,0 +1,32 @@
+# Keep build context small & fast (added 2026-06-05 during runtime migration).
+# Excludes heavy/non-runtime paths so `docker compose build` doesn't ship them.
+.git
+.venv
+venv
+**/__pycache__
+**/*.pyc
+data
+logs
+backups
+*.log
+node_modules
+**/node_modules
+ui/dist
+ui/build
+ui/node_modules
+tests/__pycache__
+.pytest_cache
+.mypy_cache
+*.docx
+*.xlsx
+container_status.txt
+*_result.txt
+*_status.txt
+*_output.txt
+migration_*.txt
+_aethera_*
+.env.example
+*.bat
+*.sh
+.idea
+.vscode

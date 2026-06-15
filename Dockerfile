@@ -9,12 +9,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies
+# Copy pyproject.toml and install base dependencies
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir 'sentry-sdk[fastapi]>=2.0.0'
 
-# Download spaCy model for NLP
-RUN python -m spacy download en_core_web_sm
+# Download spaCy model for NLP (best-effort)
+RUN python -m spacy download en_core_web_sm 2>&1 || true
 
 # Copy source
 COPY . .

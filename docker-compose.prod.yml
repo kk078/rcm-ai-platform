@@ -1,143 +1,310 @@
+version: "3.9"
+
+# ── Aethera AI — Production Compose ──────────────────────────────────────────
+# Usage: docker compose -f docker-compose.prod.yml up -d
+# Monitoring: docker compose -f docker-compose.prod.yml --profile monitoring up -d
+
+networks:
+  aethera-network:
+    driver: bridge
+
+volumes:
+  aethera_postgres_data:
+  aethera_redis_data:
+  aethera_qdrant_data:
+  aethera_minio_data:
+  aethera_grafana_data:
+  aethera_prometheus_data:
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+x-restart: &restart-policy
+  restart: always
+
+x-api-build: &api-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  networks:
+    - aethera-network
+  logging: *default-logging
+
 services:
-  # ── API Server ─────────────────────────────────────────
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    <<: *restart-policy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aethera_db}
+      POSTGRES_USER: ${POSTGRES_USER:-aethera}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - aethera_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aethera} -d ${POSTGRES_DB:-aethera_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    logging: *default-logging
+    networks:
+      - aethera-network
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    <<: *restart-policy
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - aethera_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+    networks:
+      - aethera-network
+
+  # ── Qdrant (Vector DB) ────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    <<: *restart-policy
+    volumes:
+      - aethera_qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333' 2>/dev/null && exit 0 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+    networks:
+      - aethera-network
+
+  # ── MinIO (Object Storage) ────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    <<: *restart-policy
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aethera}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - aethera_minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+    networks:
+      - aethera-network
+
+  # ── API Server ────────────────────────────────────────────────────────────
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file: .env.prod
+    <<: [*api-build, *restart-policy]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks:
-      - rcm-network
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     command: >
-      uvicorn src.api.main:app
-      --host 0.0.0.0
-      --port 8000
-      --workers 2
+      gunicorn src.api.main:app
+      -w 4
+      -k uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --timeout 120
+      --keep-alive 5
+      --access-logfile -
+      --error-logfile -
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
-  # ── Celery Worker ──────────────────────────────────────
+  # ── Celery Worker ─────────────────────────────────────────────────────────
   celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file: .env.prod
+    <<: [*api-build, *restart-policy]
     depends_on:
-      - redis
-      - postgres
-    networks:
-      - rcm-network
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: >
       celery -A src.infrastructure.queue.celery_app worker
-      -l info -Q coding,billing,payments,denials,edi
-      --concurrency=2
+      -l info -Q coding,billing,payments,denials,edi,celery,ai_dispatch
+      --concurrency=8
+      --max-tasks-per-child=100
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A src.infrastructure.queue.celery_app inspect ping -d celery@$$HOSTNAME --timeout 5 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 45s
 
-  # ── Celery Beat (Scheduler) ────────────────────────────
+  # ── Celery Beat (Scheduler) ───────────────────────────────────────────────
   celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file: .env.prod
+    <<: [*api-build, *restart-policy]
     depends_on:
-      - redis
-    networks:
-      - rcm-network
-    command: celery -A src.infrastructure.queue.celery_app beat -l info
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: >
+      celery -A src.infrastructure.queue.celery_app beat
+      -l info
+      --scheduler celery.beat:PersistentScheduler
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/celerybeat.pid && kill -0 $(cat /tmp/celerybeat.pid) 2>/dev/null || celery -A src.infrastructure.queue.celery_app inspect ping --timeout 5 > /dev/null 2>&1 || exit 1"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
 
-  # ── Nginx (Reverse Proxy + Frontends) ──────────────────
+  # ── Nginx (Reverse Proxy + SPA) ───────────────────────────────────────────
   nginx:
-    image: nginx:alpine
-    restart: unless-stopped
+    build:
+      context: ./config/nginx
+      dockerfile: Dockerfile
+    <<: *restart-policy
     ports:
-      - "8080:80"
+      - "8088:80"
     volumes:
-      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ui/staff-portal/dist:/var/www/staff-portal:ro
-      - ./ui/provider-portal/dist:/var/www/provider-portal:ro
+      - ./ui/staff-portal/dist:/app/frontend:ro
+      - ./ui/provider-portal/dist:/app/provider-portal:ro
     depends_on:
-      - api
-    networks:
-      - rcm-network
-
-  # ── PostgreSQL ─────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    env_file: .env.prod
-    environment:
-      POSTGRES_DB: medclaim_db
-      POSTGRES_USER: medclaim
-      POSTGRES_PASSWORD: "07c21453e7abad6102986d12be8f23c6"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    networks:
-      - rcm-network
+      api:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U medclaim"]
-      interval: 10s
+      test: ["CMD-SHELL", "curl -sf http://localhost/health || exit 1"]
+      interval: 15s
       timeout: 5s
       retries: 5
-
-  # ── Redis ──────────────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass "8ac872bdbf44685f2a85b2ccf47b94ba"
-    volumes:
-      - redisdata:/data
+      start_period: 15s
+    logging: *default-logging
     networks:
-      - rcm-network
+      - aethera-network
+
+  # ── AI Agent Microservice ─────────────────────────────────────────────────
+  ai-agents:
+    build:
+      context: ../AIAgents
+      dockerfile: Dockerfile
+    <<: *restart-policy
+    env_file: ../AIAgents/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      gunicorn main:app
+      -w 2
+      -k uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8001
+      --timeout 180
+      --keep-alive 5
+      --access-logfile -
+      --error-logfile -
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "8ac872bdbf44685f2a85b2ccf47b94ba", "ping"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 20s
+      timeout: 10s
       retries: 5
-
-  # ── Qdrant (Vector DB) ────────────────────────────────
-  qdrant:
-    image: qdrant/qdrant:latest
-    restart: unless-stopped
-    volumes:
-      - qdrantdata:/qdrant/storage
+      start_period: 45s
+    logging: *default-logging
     networks:
-      - rcm-network
+      - aethera-network
 
-  # ── MinIO (Object Storage) ────────────────────────────
-  minio:
-    image: minio/minio:latest
-    restart: unless-stopped
-    env_file: .env.prod
-    environment:
-      MINIO_ROOT_USER: medclaim_minio
-      MINIO_ROOT_PASSWORD: "db3d5e56a30686389bfc7c9968f689dd"
-    volumes:
-      - miniodata:/data
-    networks:
-      - rcm-network
-    command: server /data
-
-  # ── Cloudflare Tunnel ──────────────────────────────────
+  # ── Cloudflare Tunnel ─────────────────────────────────────────────────────
   cloudflared:
     image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel run
-    env_file: .env.prod
+    <<: *restart-policy
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
     depends_on:
-      - nginx
+      nginx:
+        condition: service_healthy
+    logging: *default-logging
     networks:
-      - rcm-network
+      - aethera-network
 
-networks:
-  rcm-network:
-    driver: bridge
+  # ── Prometheus (monitoring profile) ──────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    <<: *restart-policy
+    profiles: [monitoring]
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - aethera_prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *default-logging
+    networks:
+      - aethera-network
 
-volumes:
-  pgdata:
-  redisdata:
-  qdrantdata:
-  miniodata:
+  # ── Grafana (monitoring profile) ──────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    <<: *restart-policy
+    profiles: [monitoring]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - aethera_grafana_data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
+    networks:
+      - aethera-network

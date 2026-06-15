@@ -1,0 +1,26 @@
+=== Apply Patch Migration g8b04d925f33 === 
+ 
+[1/4] Copying migration file into container... 
+ 
+[2/4] Verify file copied successfully... 
+total 108
+dr-xr-xr-x 1 appuser appuser  4096 May 27 11:42 .
+dr-xr-xr-x 1 appuser appuser  4096 May  8 08:55 ..
+-rwxr-xr-x 1 appuser appuser   697 May 18 14:59 a2f84c901e12_add_must_change_password.py
+-rwxr-xr-x 1 appuser appuser 61001 May 10 13:30 b1130d605f93_initial_schema.py
+-rwxr-xr-x 1 appuser appuser 19577 May 18 19:05 c3d91e7f2a45_add_harmony_ehr_modules.py
+-rwxr-xr-x 1 appuser appuser  2917 May 19 06:23 e5f82b193d67_add_error_logs_table.py
+-rwxr-xr-x 1 appuser appuser   626 May 26 09:39 f7a93c814e12_add_notes_to_work_queue_items.py
+-rwxr-xr-x 1 root    root     1444 May 27 11:40 g8b04d925f33_add_patch_columns_to_error_logs.py
+ 
+[3/4] Running alembic upgrade head... 
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade f7a93c814e12 -> g8b04d925f33, add patch columns to error_logs for AI auto-patcher
+ 
+[4/4] Verify current head after upgrade... 
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+g8b04d925f33 (head)
+ 
+Done. 

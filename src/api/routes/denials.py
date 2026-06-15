@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.infrastructure.database.session import get_db
 from src.infrastructure.database.models import Denial, Claim, Patient, Payer, Appeal
 from src.infrastructure.auth.middleware import get_current_user
+from src.api.schemas.common import PaginatedResponse
 
 router = APIRouter()
 
@@ -62,6 +63,39 @@ class DenialResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    # Frontend alias fields (some pages use these names)
+    @property
+    def denial_code(self) -> str:
+        return self.reason_code
+
+    @property
+    def denial_reason(self) -> str:
+        return self.reason_description
+
+    @property
+    def appeal_status(self) -> str:
+        return self.status.value if hasattr(self.status, "value") else str(self.status)
+
+    @property
+    def days_remaining(self) -> int | None:
+        return self.days_until_deadline
+
+    @property
+    def amount_denied(self) -> float:
+        return self.denial_amount
+
+    def model_post_init(self, __context) -> None:
+        pass  # Allow extra computed access
+
+    def model_dump(self, **kwargs):
+        d = super().model_dump(**kwargs)
+        d["denial_code"] = self.reason_code
+        d["denial_reason"] = self.reason_description
+        d["appeal_status"] = self.status.value if hasattr(self.status, "value") else str(self.status)
+        d["days_remaining"] = self.days_until_deadline
+        d["amount_denied"] = self.denial_amount
+        return d
+
 
 class AppealDraft(BaseModel):
     denial_id: UUID
@@ -105,7 +139,7 @@ class DenialPatternResponse(BaseModel):
 
 # ── Endpoints ────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[DenialResponse])
+@router.get("/")
 async def list_denials(
     status: DenialStatus | None = None,
     category: DenialCategory | None = None,
@@ -123,23 +157,41 @@ async def list_denials(
     List denials with filtering, sorting, and pagination.
     Default sort is by priority score (highest first) for optimal worklist.
     """
+    # Build filter conditions (shared between count and items queries)
+    conditions = []
+    if status is not None:
+        conditions.append(Denial.status == status.value)
+    if category is not None:
+        conditions.append(Denial.category == category.value)
+    if payer_id is not None:
+        conditions.append(Denial.payer_id == payer_id)
+    if assigned_to is not None:
+        conditions.append(Denial.assigned_to == assigned_to)
+    if min_amount is not None:
+        conditions.append(Denial.denial_amount >= min_amount)
+
+    # Total count with same filters
+    count_query = select(func.count(Denial.id)).join(
+        Claim, Denial.claim_id == Claim.id
+    ).join(
+        Patient, Claim.patient_id == Patient.id
+    ).join(
+        Payer, Denial.payer_id == Payer.id
+    )
+    if conditions:
+        count_query = count_query.where(*conditions)
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Items query with joins, filters, sorting, and pagination
     query = (
         select(Denial, Claim.claim_number, Patient.first_name, Patient.last_name, Payer.payer_name)
         .join(Claim, Denial.claim_id == Claim.id)
         .join(Patient, Claim.patient_id == Patient.id)
         .join(Payer, Denial.payer_id == Payer.id)
     )
-
-    if status is not None:
-        query = query.where(Denial.status == status.value)
-    if category is not None:
-        query = query.where(Denial.category == category.value)
-    if payer_id is not None:
-        query = query.where(Denial.payer_id == payer_id)
-    if assigned_to is not None:
-        query = query.where(Denial.assigned_to == assigned_to)
-    if min_amount is not None:
-        query = query.where(Denial.denial_amount >= min_amount)
+    if conditions:
+        query = query.where(*conditions)
 
     # Sorting
     sort_column = {
@@ -184,19 +236,19 @@ async def list_denials(
             reason_description="",
             remark_codes=denial.remark_codes or [],
             denial_amount=denial.denial_amount,
-            category=DenialCategory(denial.category) if denial.category else None,
+            category=DenialCategory(denial.category) if denial.category and denial.category in [e.value for e in DenialCategory] else None,
             subcategory=denial.subcategory,
             root_cause=denial.root_cause,
             priority_score=denial.priority_score,
             recovery_probability=denial.recovery_probability,
-            status=DenialStatus(denial.status),
+            status=DenialStatus(denial.status) if denial.status in [e.value for e in DenialStatus] else DenialStatus.NEW,
             assigned_to=str(denial.assigned_to) if denial.assigned_to else None,
             appeal_deadline=denial.appeal_deadline,
             days_until_deadline=days_until,
             created_at=denial.created_at,
         ))
 
-    return responses
+    return {"items": responses, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/worklist", response_model=list[DenialResponse])
@@ -249,12 +301,12 @@ async def get_worklist(
             reason_description="",
             remark_codes=denial.remark_codes or [],
             denial_amount=denial.denial_amount,
-            category=DenialCategory(denial.category) if denial.category else None,
+            category=DenialCategory(denial.category) if denial.category and denial.category in [e.value for e in DenialCategory] else None,
             subcategory=denial.subcategory,
             root_cause=denial.root_cause,
             priority_score=denial.priority_score,
             recovery_probability=denial.recovery_probability,
-            status=DenialStatus(denial.status),
+            status=DenialStatus(denial.status) if denial.status in [e.value for e in DenialStatus] else DenialStatus.NEW,
             assigned_to=str(denial.assigned_to) if denial.assigned_to else None,
             appeal_deadline=denial.appeal_deadline,
             days_until_deadline=days_until,
@@ -306,12 +358,12 @@ async def get_denial(
         reason_description="",
         remark_codes=denial.remark_codes or [],
         denial_amount=denial.denial_amount,
-        category=DenialCategory(denial.category) if denial.category else None,
+        category=DenialCategory(denial.category) if denial.category and denial.category in [e.value for e in DenialCategory] else None,
         subcategory=denial.subcategory,
         root_cause=denial.root_cause,
         priority_score=denial.priority_score,
         recovery_probability=denial.recovery_probability,
-        status=DenialStatus(denial.status),
+        status=DenialStatus(denial.status) if denial.status in [e.value for e in DenialStatus] else DenialStatus.NEW,
         assigned_to=str(denial.assigned_to) if denial.assigned_to else None,
         appeal_deadline=denial.appeal_deadline,
         days_until_deadline=days_until,

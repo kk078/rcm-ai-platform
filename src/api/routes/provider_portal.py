@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.session import get_db
@@ -30,59 +31,63 @@ from src.infrastructure.database.models import (
     User,
 )
 from src.infrastructure.auth.middleware import get_current_user
+from src.api.schemas.common import PaginatedResponse
 
 router = APIRouter()
 
 
 # ── Schemas ──────────────────────────────────────────────────────
 
+class RecentClaim(BaseModel):
+    id: str
+    claim_number: str
+    patient_name: str
+    status: str
+    amount: float
+
+
 class PortalDashboard(BaseModel):
     """Practice-level KPIs for the provider portal landing page."""
     practice_name: str
     period: str  # e.g., "May 2026"
 
-    # Revenue Snapshot
-    total_charges_mtd: float
-    total_collections_mtd: float
-    total_adjustments_mtd: float
-    net_collection_rate: float  # (collections / (charges - contractual adj)) × 100
+    # KPI cards (field names match provider portal frontend)
+    total_claims: int
+    claims_submitted_this_month: int
+    total_collected: float
+    collection_rate: float          # 0–1 decimal (e.g. 0.923 = 92.3%)
+    open_denials: int
+    denial_rate: float              # 0–1 decimal
+    avg_days_in_ar: float
 
-    # AR Summary
-    total_ar_balance: float
-    ar_0_30: float
-    ar_31_60: float
-    ar_61_90: float
-    ar_91_120: float
-    ar_120_plus: float
+    # Recent claims list for dashboard table
+    recent_claims: list[RecentClaim]
 
-    # Claims Summary
-    claims_submitted_mtd: int
-    claims_paid_mtd: int
-    claims_denied_mtd: int
-    denial_rate: float
 
-    # Pending Work
-    charges_in_progress: int
-    claims_pending_payer: int
-    denials_being_worked: int
-    appeals_pending: int
+class TimelineEvent(BaseModel):
+    status: str
+    timestamp: str
+    note: str | None = None
 
 
 class ClaimStatusItem(BaseModel):
     """Simplified claim view for provider portal."""
-    claim_id: UUID
+    id: str                  # frontend uses claim.id
+    claim_id: UUID           # kept for backward compat
     claim_number: str
     patient_name: str
-    service_date: date
+    date_of_service: str     # frontend uses date_of_service
+    service_date: date       # kept for backward compat
     provider_name: str
     payer_name: str
     total_charge: float
     total_paid: float
     status: str
-    status_display: str  # Human-readable: "Submitted - Awaiting Payment", "Denied - Appeal Filed"
+    status_display: str
     last_updated: datetime
     denial_reason: str | None = None
     appeal_status: str | None = None
+    timeline: list[TimelineEvent] = []
 
 
 class MessageCreate(BaseModel):
@@ -152,14 +157,20 @@ async def _build_claim_status_item(claim: Claim, db: AsyncSession) -> ClaimStatu
         last = getattr(claim.patient, "last_name", "") or ""
         patient_name = f"{first} {last}".strip()
 
-    # Get provider name
+    # Get provider name — rendering_provider is a UUID FK column, not a relationship
+    # Fetch Provider row separately to get the name
     provider_name = ""
     if claim.rendering_provider:
-        first = claim.rendering_provider.first_name or ""
-        last = claim.rendering_provider.last_name or ""
-        provider_name = f"{first} {last}".strip()
+        prov_result = await db.execute(
+            select(Provider).where(Provider.id == claim.rendering_provider)
+        )
+        prov = prov_result.scalar_one_or_none()
+        if prov:
+            first = prov.first_name or ""
+            last = prov.last_name or ""
+            provider_name = f"{first} {last}".strip()
 
-    # Get payer name
+    # Get payer name — relationship loaded via selectinload in the query
     payer_name = ""
     if claim.payer:
         payer_name = claim.payer.payer_name or ""
@@ -185,20 +196,55 @@ async def _build_claim_status_item(claim: Claim, db: AsyncSession) -> ClaimStatu
     status_display = STATUS_DISPLAY.get(claim.status, claim.status.replace("_", " ").title())
     last_updated = claim.updated_at or claim.created_at or datetime.now(timezone.utc).replace(tzinfo=None)
 
+    # Build service date
+    svc_date = date.today()
+    if hasattr(claim, "encounter_date") and claim.encounter_date:
+        svc_date = claim.encounter_date if isinstance(claim.encounter_date, date) else date.today()
+
+    # Build timeline from key claim timestamps
+    timeline: list[TimelineEvent] = []
+    if claim.created_at:
+        timeline.append(TimelineEvent(
+            status="draft",
+            timestamp=claim.created_at.isoformat(),
+            note=f"Claim {claim.claim_number} created",
+        ))
+    if claim.submission_date:
+        timeline.append(TimelineEvent(
+            status="submitted",
+            timestamp=claim.submission_date.isoformat() if hasattr(claim.submission_date, "isoformat") else str(claim.submission_date),
+            note="Submitted to payer",
+        ))
+    if claim.adjudication_date and claim.status in ("paid", "partial_paid"):
+        timeline.append(TimelineEvent(
+            status=claim.status,
+            timestamp=claim.adjudication_date.isoformat() if hasattr(claim.adjudication_date, "isoformat") else str(claim.adjudication_date),
+            note=f"Paid ${float(claim.total_paid or 0):,.2f}",
+        ))
+    elif claim.adjudication_date and claim.status == "denied":
+        timeline.append(TimelineEvent(
+            status="denied",
+            timestamp=claim.adjudication_date.isoformat() if hasattr(claim.adjudication_date, "isoformat") else str(claim.adjudication_date),
+            note="Claim denied",
+        ))
+
     return ClaimStatusItem(
+        id=str(claim.id),
         claim_id=claim.id,
         claim_number=claim.claim_number,
         patient_name=patient_name,
-        service_date=claim.encounter_date if hasattr(claim, "encounter_date") else date.today(),
+        date_of_service=svc_date.isoformat(),
+        service_date=svc_date,
         provider_name=provider_name,
         payer_name=payer_name,
-        total_charge=claim.total_charge,
-        total_paid=claim.total_paid,
+        total_charge=float(claim.total_charge or 0),
+        total_paid=float(claim.total_paid or 0),
         status=claim.status,
         status_display=status_display,
         last_updated=last_updated,
         denial_reason=denial_reason,
         appeal_status=appeal_status,
+        timeline=timeline,
     )
 
 
@@ -221,24 +267,14 @@ async def get_portal_dashboard(
         return PortalDashboard(
             practice_name="",
             period=period or datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m"),
-            total_charges_mtd=0,
-            total_collections_mtd=0,
-            total_adjustments_mtd=0,
-            net_collection_rate=0,
-            total_ar_balance=0,
-            ar_0_30=0,
-            ar_31_60=0,
-            ar_61_90=0,
-            ar_91_120=0,
-            ar_120_plus=0,
-            claims_submitted_mtd=0,
-            claims_paid_mtd=0,
-            claims_denied_mtd=0,
-            denial_rate=0,
-            charges_in_progress=0,
-            claims_pending_payer=0,
-            denials_being_worked=0,
-            appeals_pending=0,
+            total_claims=0,
+            claims_submitted_this_month=0,
+            total_collected=0.0,
+            collection_rate=0.0,
+            open_denials=0,
+            denial_rate=0.0,
+            avg_days_in_ar=0.0,
+            recent_claims=[],
         )
     if period is None:
         period = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m")
@@ -256,63 +292,16 @@ async def get_portal_dashboard(
     else:
         period_end = date(int(year), int(month) + 1, 1)
 
-    # Revenue snapshot
-    charges_q = await db.execute(
-        select(func.coalesce(func.sum(Claim.total_charge), 0)).where(
-            and_(
-                Claim.practice_id == practice_id,
-                Claim.created_at >= period_start,
-                Claim.created_at < period_end,
-            )
-        )
-    )
-    total_charges_mtd = float(charges_q.scalar() or 0)
-
-    collections_q = await db.execute(
-        select(func.coalesce(func.sum(Claim.total_paid), 0)).where(
-            and_(
-                Claim.practice_id == practice_id,
-                Claim.adjudication_date >= period_start,
-                Claim.adjudication_date < period_end,
-            )
-        )
-    )
-    total_collections_mtd = float(collections_q.scalar() or 0)
-
-    adjustments_q = await db.execute(
-        select(func.coalesce(func.sum(Claim.total_adjusted), 0)).where(
-            and_(
-                Claim.practice_id == practice_id,
-                Claim.adjudication_date >= period_start,
-                Claim.adjudication_date < period_end,
-            )
-        )
-    )
-    total_adjustments_mtd = float(adjustments_q.scalar() or 0)
-
-    net_collection_rate = (
-        round((total_collections_mtd / (total_charges_mtd - total_adjustments_mtd)) * 100, 1)
-        if (total_charges_mtd - total_adjustments_mtd) > 0
-        else 0.0
-    )
-
-    # AR aging
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = now.date()
 
-    ar_total_q = await db.execute(
-        select(func.coalesce(func.sum(Claim.total_charge - Claim.total_paid), 0)).where(
-            and_(
-                Claim.practice_id == practice_id,
-                Claim.total_charge > Claim.total_paid,
-                Claim.status.in_(["submitted", "accepted", "partial_paid"]),
-            )
-        )
+    # Total claims (all-time) and this-month count
+    total_claims_q = await db.execute(
+        select(func.count(Claim.id)).where(Claim.practice_id == practice_id)
     )
-    total_ar_balance = float(ar_total_q.scalar() or 0)
+    total_claims = int(total_claims_q.scalar() or 0)
 
-    # Claims summary
-    submitted_q = await db.execute(
+    submitted_mtd_q = await db.execute(
         select(func.count(Claim.id)).where(
             and_(
                 Claim.practice_id == practice_id,
@@ -321,21 +310,38 @@ async def get_portal_dashboard(
             )
         )
     )
-    claims_submitted_mtd = submitted_q.scalar() or 0
+    claims_submitted_this_month = int(submitted_mtd_q.scalar() or 0)
 
-    paid_q = await db.execute(
-        select(func.count(Claim.id)).where(
+    # Total collected (all-time paid claims)
+    collections_q = await db.execute(
+        select(func.coalesce(func.sum(Claim.total_paid), 0)).where(
+            Claim.practice_id == practice_id
+        )
+    )
+    total_collected = float(collections_q.scalar() or 0)
+
+    # Collection rate = total paid / total charged (all-time, excluding $0 charges)
+    charges_q = await db.execute(
+        select(func.coalesce(func.sum(Claim.total_charge), 0)).where(
+            Claim.practice_id == practice_id
+        )
+    )
+    total_charges = float(charges_q.scalar() or 0)
+    collection_rate = round(total_collected / total_charges, 4) if total_charges > 0 else 0.0
+
+    # Open denials (active, not resolved)
+    open_denials_q = await db.execute(
+        select(func.count(Denial.id)).where(
             and_(
-                Claim.practice_id == practice_id,
-                Claim.status == "paid",
-                Claim.adjudication_date >= period_start,
-                Claim.adjudication_date < period_end,
+                Denial.practice_id == practice_id,
+                Denial.status.in_(["new", "in_progress"]),
             )
         )
     )
-    claims_paid_mtd = paid_q.scalar() or 0
+    open_denials = int(open_denials_q.scalar() or 0)
 
-    denied_q = await db.execute(
+    # Denial rate = denied claims this month / submitted this month
+    denied_mtd_q = await db.execute(
         select(func.count(Claim.id)).where(
             and_(
                 Claim.practice_id == practice_id,
@@ -345,78 +351,65 @@ async def get_portal_dashboard(
             )
         )
     )
-    claims_denied_mtd = denied_q.scalar() or 0
+    claims_denied_mtd = int(denied_mtd_q.scalar() or 0)
+    denial_rate = round(claims_denied_mtd / claims_submitted_this_month, 4) if claims_submitted_this_month else 0.0
 
-    denial_rate = round(claims_denied_mtd / claims_submitted_mtd, 4) if claims_submitted_mtd else 0.0
-
-    # Pending work
-    charges_in_progress_q = await db.execute(
-        select(func.count(Claim.id)).where(
+    # Average days in AR — mean age of open AR claims in days
+    open_ar_q = await db.execute(
+        select(Claim.created_at).where(
             and_(
                 Claim.practice_id == practice_id,
-                Claim.status.in_(["draft", "scrubbing", "ready"]),
+                Claim.total_charge > Claim.total_paid,
+                Claim.status.in_(["submitted", "accepted", "partial_paid"]),
             )
         )
     )
-    charges_in_progress = charges_in_progress_q.scalar() or 0
+    open_ar_dates = open_ar_q.scalars().all()
+    if open_ar_dates:
+        days_list = [(today - (d.date() if hasattr(d, "date") else d)).days for d in open_ar_dates if d]
+        avg_days_in_ar = round(sum(days_list) / len(days_list), 1) if days_list else 0.0
+    else:
+        avg_days_in_ar = 0.0
 
-    claims_pending_q = await db.execute(
-        select(func.count(Claim.id)).where(
-            and_(
-                Claim.practice_id == practice_id,
-                Claim.status == "submitted",
-            )
-        )
+    # Recent claims — last 10 for dashboard table
+    recent_q = await db.execute(
+        select(Claim)
+        .options(selectinload(Claim.patient))
+        .where(Claim.practice_id == practice_id)
+        .order_by(Claim.created_at.desc())
+        .limit(10)
     )
-    claims_pending_payer = claims_pending_q.scalar() or 0
-
-    denials_worked_q = await db.execute(
-        select(func.count(Denial.id)).where(
-            and_(
-                Denial.practice_id == practice_id,
-                Denial.status.in_(["new", "in_progress"]),
-            )
-        )
-    )
-    denials_being_worked = denials_worked_q.scalar() or 0
-
-    appeals_pending_q = await db.execute(
-        select(func.count(Appeal.id)).where(
-            and_(
-                Appeal.practice_id == practice_id,
-                Appeal.status.in_(["draft", "submitted"]),
-            )
-        )
-    )
-    appeals_pending = appeals_pending_q.scalar() or 0
+    recent_claims_orm = recent_q.scalars().all()
+    recent_claims = []
+    for c in recent_claims_orm:
+        patient_name = ""
+        if c.patient:
+            patient_name = f"{getattr(c.patient, 'first_name', '') or ''} {getattr(c.patient, 'last_name', '') or ''}".strip()
+        recent_claims.append(RecentClaim(
+            id=str(c.id),
+            claim_number=c.claim_number or "",
+            patient_name=patient_name,
+            status=c.status or "unknown",
+            amount=float(c.total_charge or 0),
+        ))
 
     return PortalDashboard(
         practice_name=practice_name,
         period=period,
-        total_charges_mtd=total_charges_mtd,
-        total_collections_mtd=total_collections_mtd,
-        total_adjustments_mtd=total_adjustments_mtd,
-        net_collection_rate=net_collection_rate,
-        total_ar_balance=total_ar_balance,
-        ar_0_30=0.0,
-        ar_31_60=0.0,
-        ar_61_90=0.0,
-        ar_91_120=0.0,
-        ar_120_plus=0.0,
-        claims_submitted_mtd=claims_submitted_mtd,
-        claims_paid_mtd=claims_paid_mtd,
-        claims_denied_mtd=claims_denied_mtd,
+        total_claims=total_claims,
+        claims_submitted_this_month=claims_submitted_this_month,
+        total_collected=total_collected,
+        collection_rate=collection_rate,
+        open_denials=open_denials,
         denial_rate=denial_rate,
-        charges_in_progress=charges_in_progress,
-        claims_pending_payer=claims_pending_payer,
-        denials_being_worked=denials_being_worked,
-        appeals_pending=appeals_pending,
+        avg_days_in_ar=avg_days_in_ar,
+        recent_claims=recent_claims,
     )
 
 
 # ── Claim Status Tracker ─────────────────────────────────────────
 
-@router.get("/claims", response_model=list[ClaimStatusItem])
+@router.get("/claims")
 async def get_my_claims(
     status: str | None = None,  # submitted, paid, denied, appealing, pending
     provider_id: UUID | None = None,
@@ -445,9 +438,16 @@ async def get_my_claims(
     if date_to:
         conditions.append(Claim.created_at <= date_to)
 
+    # Total count with same filters
+    total_result = await db.execute(
+        select(func.count(Claim.id)).where(and_(*conditions))
+    )
+    total = total_result.scalar() or 0
+
     offset = (page - 1) * page_size
     result = await db.execute(
         select(Claim)
+        .options(selectinload(Claim.patient), selectinload(Claim.payer))
         .where(and_(*conditions))
         .order_by(Claim.created_at.desc())
         .offset(offset)
@@ -459,7 +459,7 @@ async def get_my_claims(
     for claim in claims:
         item = await _build_claim_status_item(claim, db)
         items.append(item)
-    return items
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/claims/{claim_id}", response_model=ClaimStatusItem)
@@ -476,7 +476,9 @@ async def get_claim_status(
     practice_id = _get_practice_id(current_user)
 
     result = await db.execute(
-        select(Claim).where(and_(Claim.id == claim_id, Claim.practice_id == practice_id))
+        select(Claim)
+        .options(selectinload(Claim.patient), selectinload(Claim.payer))
+        .where(and_(Claim.id == claim_id, Claim.practice_id == practice_id))
     )
     claim = result.scalar_one_or_none()
     if not claim:
@@ -543,6 +545,7 @@ async def get_my_denials(
     date_from: date | None = None,
     date_to: date | None = None,
     page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -560,31 +563,62 @@ async def get_my_denials(
     if date_to:
         conditions.append(Denial.denial_date <= date_to)
 
-    offset = (page - 1) * 50  # page_size
+    # Total count with same filters
+    total_result = await db.execute(
+        select(func.count(Denial.id)).where(and_(*conditions))
+    )
+    total = total_result.scalar() or 0
+
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(Denial)
         .where(and_(*conditions))
-        .order_by(Denial.priority_score.desc() if Denial.priority_score is not None else Denial.denial_date.desc())
+        .order_by(Denial.denial_date.desc())
         .offset(offset)
-        .limit(50)
+        .limit(page_size)
     )
     denials = result.scalars().all()
 
     denial_list = []
+    today = date.today()
     for d in denials:
+        # Resolve claim number + patient name
+        claim_number = ""
+        patient_name = ""
+        if d.claim_id:
+            claim_q = await db.execute(select(Claim).options(selectinload(Claim.patient)).where(Claim.id == d.claim_id))
+            claim = claim_q.scalar_one_or_none()
+            if claim:
+                claim_number = claim.claim_number or ""
+                if claim.patient:
+                    patient_name = f"{getattr(claim.patient, 'first_name', '') or ''} {getattr(claim.patient, 'last_name', '') or ''}".strip()
+
+        # Latest appeal status
+        appeal_status = "not_started"
+        appeal_q = await db.execute(
+            select(Appeal).where(Appeal.denial_id == d.id).order_by(Appeal.created_at.desc())
+        )
+        latest_appeal = appeal_q.scalars().first()
+        if latest_appeal:
+            appeal_status = latest_appeal.status or "not_started"
+
+        # Days remaining until appeal deadline
+        days_remaining = None
+        if d.appeal_deadline:
+            dl = d.appeal_deadline.date() if hasattr(d.appeal_deadline, "date") else d.appeal_deadline
+            days_remaining = max(0, (dl - today).days)
+
         denial_list.append({
             "id": str(d.id),
-            "claim_id": str(d.claim_id),
-            "denial_date": d.denial_date.isoformat() if d.denial_date else None,
-            "reason_code": d.reason_code,
-            "denial_amount": d.denial_amount,
-            "category": d.category,
-            "status": d.status,
-            "priority_score": d.priority_score,
-            "recovery_probability": d.recovery_probability,
-            "appeal_deadline": d.appeal_deadline.isoformat() if d.appeal_deadline else None,
+            "claim_number": claim_number,
+            "patient_name": patient_name,
+            "denial_code": d.reason_code,
+            "denial_reason": d.category or d.reason_code or "",
+            "amount_denied": float(d.denial_amount or 0),
+            "appeal_status": appeal_status,
+            "days_remaining": days_remaining,
         })
-    return denial_list
+    return {"items": denial_list, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/denials/{denial_id}")
@@ -663,10 +697,11 @@ async def upload_supporting_document(
 
 # ── Messaging ────────────────────────────────────────────────────
 
-@router.get("/messages", response_model=list[MessageResponse])
+@router.get("/messages")
 async def list_messages(
     unread_only: bool = False,
     page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -677,13 +712,19 @@ async def list_messages(
     if unread_only:
         conditions.append(PortalMessage.is_read == False)
 
-    offset = (page - 1) * 50
+    # Total count with same filters
+    total_result = await db.execute(
+        select(func.count(PortalMessage.id)).where(and_(*conditions))
+    )
+    total = total_result.scalar() or 0
+
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(PortalMessage)
         .where(and_(*conditions))
         .order_by(PortalMessage.created_at.desc())
         .offset(offset)
-        .limit(50)
+        .limit(page_size)
     )
     messages = result.scalars().all()
 
@@ -715,7 +756,7 @@ async def list_messages(
             is_read=msg.is_read,
             created_at=msg.created_at,
         ))
-    return responses
+    return {"items": responses, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/messages", response_model=MessageResponse, status_code=201)
@@ -884,7 +925,7 @@ async def list_available_reports(
 
 @router.get("/reports/monthly-collection")
 async def monthly_collection_report(
-    period: str = Query(description="YYYY-MM format"),
+    period: str | None = Query(default=None, description="YYYY-MM format; defaults to current month"),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -892,11 +933,13 @@ async def monthly_collection_report(
     Detailed monthly collection report:
     - Total charges vs collections
     - Breakdown by payer
-    - Breakdown by provider
     - Payment vs adjustment detail
-    - Comparison to prior month and prior year
     """
     practice_id = _get_practice_id(current_user)
+
+    if not period:
+        now = datetime.now(timezone.utc)
+        period = f"{now.year}-{now.month:02d}"
 
     year, month = period.split("-")
     period_start = date(int(year), int(month), 1)
@@ -905,7 +948,7 @@ async def monthly_collection_report(
     else:
         period_end = date(int(year), int(month) + 1, 1)
 
-    # Total charges and collections
+    # Total charges
     charges_q = await db.execute(
         select(func.coalesce(func.sum(Claim.total_charge), 0)).where(
             and_(
@@ -917,6 +960,7 @@ async def monthly_collection_report(
     )
     total_charges = float(charges_q.scalar() or 0)
 
+    # Total collections
     collections_q = await db.execute(
         select(func.coalesce(func.sum(Claim.total_paid), 0)).where(
             and_(
@@ -928,6 +972,7 @@ async def monthly_collection_report(
     )
     total_collections = float(collections_q.scalar() or 0)
 
+    # Total adjustments
     adjustments_q = await db.execute(
         select(func.coalesce(func.sum(Claim.total_adjusted), 0)).where(
             and_(
@@ -939,13 +984,47 @@ async def monthly_collection_report(
     )
     total_adjustments = float(adjustments_q.scalar() or 0)
 
+    collection_rate = round(total_collections / total_charges, 4) if total_charges else 0.0
+
+    # By payer breakdown
+    payer_q = await db.execute(
+        select(
+            Payer.payer_name,
+            func.count(Claim.id).label("claims"),
+            func.coalesce(func.sum(Claim.total_charge), 0).label("charged"),
+            func.coalesce(func.sum(Claim.total_paid), 0).label("collected"),
+        )
+        .join(Payer, Claim.payer_id == Payer.id, isouter=True)
+        .where(
+            and_(
+                Claim.practice_id == practice_id,
+                Claim.created_at >= period_start,
+                Claim.created_at < period_end,
+            )
+        )
+        .group_by(Payer.payer_name)
+        .order_by(func.sum(Claim.total_paid).desc())
+        .limit(10)
+    )
+    by_payer = [
+        {
+            "payer": row.payer_name or "Unknown",
+            "claims": row.claims,
+            "charged": float(row.charged),
+            "collected": float(row.collected),
+        }
+        for row in payer_q.all()
+    ]
+
     return {
-        "period": period,
-        "total_charges": total_charges,
-        "total_collections": total_collections,
-        "total_adjustments": total_adjustments,
-        "by_payer": [],
-        "by_provider": [],
+        "summary": {
+            "period": period,
+            "total_charges": total_charges,
+            "total_collections": total_collections,
+            "total_adjustments": total_adjustments,
+            "collection_rate": collection_rate,
+        },
+        "details": by_payer,
     }
 
 
@@ -997,17 +1076,31 @@ async def ar_aging_report(
             aging["120_plus"] += balance
         aging["total"] += balance
 
-    return aging
+    return {
+        "summary": {
+            "0_30_days": round(aging["0_30"], 2),
+            "31_60_days": round(aging["31_60"], 2),
+            "61_90_days": round(aging["61_90"], 2),
+            "91_120_days": round(aging["91_120"], 2),
+            "120_plus_days": round(aging["120_plus"], 2),
+            "total_outstanding": round(aging["total"], 2),
+        },
+        "details": [],
+    }
 
 
 @router.get("/reports/denial-summary")
 async def denial_summary_report(
-    period: str = Query(description="YYYY-MM format"),
+    period: str | None = Query(default=None, description="YYYY-MM format; defaults to current month"),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """Denial rates, top reasons, and outcomes for the period."""
     practice_id = _get_practice_id(current_user)
+
+    if not period:
+        now = datetime.now(timezone.utc)
+        period = f"{now.year}-{now.month:02d}"
 
     year, month = period.split("-")
     period_start = date(int(year), int(month), 1)
@@ -1059,11 +1152,13 @@ async def denial_summary_report(
     top_reasons = [{"reason_code": row[0], "count": row[1]} for row in reasons_q.all()]
 
     return {
-        "period": period,
-        "total_claims": total_claims,
-        "denied_claims": denied_claims,
-        "denial_rate": denial_rate,
-        "top_reasons": top_reasons,
+        "summary": {
+            "period": period,
+            "total_claims": total_claims,
+            "denied_claims": denied_claims,
+            "denial_rate": denial_rate,
+        },
+        "details": top_reasons,
     }
 
 
@@ -1101,7 +1196,12 @@ async def payer_performance_report(
             "reimbursement_rate": avg_reimbursement,
         })
 
-    return payers
+    return {
+        "summary": {
+            "total_payers": len(payers),
+        },
+        "details": payers,
+    }
 
 
 @router.get("/reports/download/{report_id}")
@@ -1210,6 +1310,7 @@ async def list_my_payers(
 async def list_my_invoices(
     status: str | None = None,
     page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -1220,13 +1321,19 @@ async def list_my_invoices(
     if status:
         conditions.append(ClientInvoice.status == status)
 
-    offset = (page - 1) * 50
+    # Total count with same filters
+    total_result = await db.execute(
+        select(func.count(ClientInvoice.id)).where(and_(*conditions))
+    )
+    total = total_result.scalar() or 0
+
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(ClientInvoice)
         .where(and_(*conditions))
         .order_by(ClientInvoice.created_at.desc())
         .offset(offset)
-        .limit(50)
+        .limit(page_size)
     )
     invoices = result.scalars().all()
 
@@ -1235,17 +1342,16 @@ async def list_my_invoices(
         invoice_list.append({
             "id": str(inv.id),
             "invoice_number": inv.invoice_number,
-            "billing_period": f"{inv.billing_period_start} to {inv.billing_period_end}",
-            "total_collections": inv.total_collections,
-            "total_due": inv.total_due,
+            # Frontend expects period_start / period_end
+            "period_start": inv.billing_period_start.isoformat() if inv.billing_period_start else None,
+            "period_end": inv.billing_period_end.isoformat() if inv.billing_period_end else None,
+            # Frontend expects 'amount'
+            "amount": float(inv.total_due or 0),
             "status": inv.status,
-            "sent_at": inv.sent_at.isoformat() if inv.sent_at else None,
             "due_date": inv.due_date.isoformat() if inv.due_date else None,
-            "paid_at": inv.paid_at.isoformat() if inv.paid_at else None,
-            "paid_amount": inv.paid_amount,
             "created_at": inv.created_at.isoformat() if inv.created_at else None,
         })
-    return invoice_list
+    return {"items": invoice_list, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/invoices/{invoice_id}")
@@ -1269,20 +1375,23 @@ async def get_invoice_detail(
     return {
         "id": str(invoice.id),
         "invoice_number": invoice.invoice_number,
-        "billing_period_start": invoice.billing_period_start.isoformat(),
-        "billing_period_end": invoice.billing_period_end.isoformat(),
-        "total_collections": invoice.total_collections,
+        "billing_period_start": invoice.billing_period_start.isoformat() if invoice.billing_period_start else None,
+        "billing_period_end": invoice.billing_period_end.isoformat() if invoice.billing_period_end else None,
+        "period_start": invoice.billing_period_start.isoformat() if invoice.billing_period_start else None,
+        "period_end": invoice.billing_period_end.isoformat() if invoice.billing_period_end else None,
+        "total_collections": float(invoice.total_collections) if invoice.total_collections else 0.0,
         "fee_model_used": invoice.fee_model_used,
-        "calculated_fee": invoice.calculated_fee,
+        "calculated_fee": float(invoice.calculated_fee) if invoice.calculated_fee else None,
         "minimum_fee_applied": invoice.minimum_fee_applied,
-        "adjustments": invoice.adjustments,
-        "total_due": invoice.total_due,
+        "adjustments": float(invoice.adjustments) if invoice.adjustments else 0.0,
+        "total_due": float(invoice.total_due) if invoice.total_due else 0.0,
+        "amount": float(invoice.total_due) if invoice.total_due else 0.0,
         "line_items": invoice.line_items or [],
         "status": invoice.status,
         "sent_at": invoice.sent_at.isoformat() if invoice.sent_at else None,
         "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
         "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
-        "paid_amount": invoice.paid_amount,
+        "paid_amount": float(invoice.paid_amount) if invoice.paid_amount else None,
         "notes": invoice.notes,
         "created_at": invoice.created_at.isoformat() if invoice.created_at else None,
     }
@@ -1296,7 +1405,6 @@ async def download_invoice_pdf(
 ):
     """Download invoice as PDF."""
     practice_id = _get_practice_id(current_user)
-
     result = await db.execute(
         select(ClientInvoice).where(
             and_(ClientInvoice.id == invoice_id, ClientInvoice.practice_id == practice_id)
@@ -1305,5 +1413,4 @@ async def download_invoice_pdf(
     invoice = result.scalar_one_or_none()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-
-    return {"message": "PDF generation not yet available"}
+    raise HTTPException(status_code=501, detail="PDF download not yet implemented")

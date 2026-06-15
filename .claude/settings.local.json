@@ -44,7 +44,20 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(docker compose *)",
-      "Bash([ -f \"D:/rcm-ai-platform/$f\" ])"
+      "Bash([ -f \"D:/rcm-ai-platform/$f\" ])",
+      "Bash(git commit *)",
+      "Bash(grep -E \"^\\\\.env$|^\\\\.env\\\\.prod$\" D:/rcm-ai-platform/.gitignore)",
+      "Bash(git -C D:/rcm-ai-platform diff --name-only HEAD~1)",
+      "Bash(powershell *)",
+      "Bash(curl -s http://localhost:8080/health)",
+      "Bash(curl *)",
+      "Bash(git status *)",
+      "Bash(timeout 30 bash -c 'until curl -s http://localhost:8080/api/v1/auth/login -X POST -H \"Content-Type: application/json\" -d \"{}\" 2>/dev/null | grep -q \"detail\"; do sleep 2; done')",
+      "Bash(timeout 30 bash -c 'until curl -s http://localhost:8080/api/v1/auth/login -X POST -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"admin@medclaim.ai\\\\\",\\\\\"password\\\\\":\\\\\"testpass123\\\\\"}\" 2>/dev/null | grep -q \"detail\\\\|access_token\"; do sleep 2; done')",
+      "Bash(timeout 30 bash -c 'until curl -s http://localhost:8080/api/v1/auth/login -X POST -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"admin@aetheraonline.com\\\\\",\\\\\"password\\\\\":\\\\\"MedClaimAdmin2026!\\\\\"}\" 2>/dev/null | grep -q \"access_token\"; do sleep 2; done')",
+      "Bash(grep -rn \"^\\\\s*\\\\.\\\\.\\\\.\\\\s*$\" src/api/routes/)",
+      "Bash(Get-ChildItem -Path \"D:\\\\rcm-ai-platform\\\\ui\" -Directory)",
+      "Bash(Select-Object -ExpandProperty Name)"
     ]
   }
 }

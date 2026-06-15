@@ -1,18 +1,24 @@
 {
-  "name": "medclaim-staff-portal",
+  "name": "aethera-staff-portal",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@radix-ui/react-dropdown-menu": "^2.1.1",
+    "@radix-ui/react-tooltip": "^1.1.2",
+    "@sentry/react": "^8.0.0",
     "@tanstack/react-query": "^5.51.0",
     "axios": "^1.7.4",
+    "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "esbuild": "^0.28.0",
     "lucide-react": "^0.441.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -29,5 +35,8 @@
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.24.0"
   }
 }

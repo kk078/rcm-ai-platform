@@ -1,0 +1,25 @@
+time="2026-05-27T11:16:12+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+NAME                              IMAGE                           COMMAND                  SERVICE         CREATED              STATUS                          PORTS
+rcm-ai-platform-ai-agents-1       rcm-ai-platform-ai-agents       "gunicorn main:app -…"   ai-agents       5 hours ago          Created                         
+rcm-ai-platform-api-1             rcm-ai-platform-api             "gunicorn src.api.ma…"   api             5 hours ago          Up About an hour (healthy)      8000/tcp
+rcm-ai-platform-celery-beat-1     rcm-ai-platform-celery-beat     "celery -A src.infra…"   celery-beat     5 hours ago          Up 5 hours (healthy)            8000/tcp
+rcm-ai-platform-celery-worker-1   rcm-ai-platform-celery-worker   "celery -A src.infra…"   celery-worker   5 hours ago          Up 5 hours (healthy)            8000/tcp
+rcm-ai-platform-cloudflared-1     cloudflare/cloudflared:latest   "cloudflared --no-au…"   cloudflared     5 hours ago          Created                         
+rcm-ai-platform-minio-1           minio/minio:latest              "/usr/bin/docker-ent…"   minio           5 hours ago          Up 5 hours (healthy)            9000/tcp
+rcm-ai-platform-nginx-1           rcm-ai-platform-nginx           "/docker-entrypoint.…"   nginx           About a minute ago   Up About a minute (unhealthy)   0.0.0.0:8088->80/tcp, [::]:8088->80/tcp
+rcm-ai-platform-postgres-1        postgres:16-alpine              "docker-entrypoint.s…"   postgres        5 hours ago          Up 5 hours (healthy)            5432/tcp
+rcm-ai-platform-qdrant-1          qdrant/qdrant:latest            "./entrypoint.sh"        qdrant          55 minutes ago       Up 55 minutes (healthy)         6333-6334/tcp
+rcm-ai-platform-redis-1           redis:7-alpine                  "docker-entrypoint.s…"   redis           5 hours ago          Up 5 hours (healthy)            6379/tcp
+===NGINX LOGS===
+time="2026-05-27T11:16:13+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+nginx-1  | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+nginx-1  | /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+nginx-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+nginx-1  | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+nginx-1  | 10-listen-on-ipv6-by-default.sh: info: Enabled listen on IPv6 in /etc/nginx/conf.d/default.conf
+nginx-1  | /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+nginx-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+nginx-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+nginx-1  | /docker-entrypoint.sh: Configuration complete; ready for start up
+===CLOUDFLARED LOGS===
+time="2026-05-27T11:16:13+05:30" level=warning msg="D:\\rcm-ai-platform\\docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"

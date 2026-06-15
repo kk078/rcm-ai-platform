@@ -23,6 +23,7 @@ from src.infrastructure.database.models import (
     User,
     Payer,
 )
+from src.api.schemas.common import PaginatedResponse
 from src.infrastructure.auth.middleware import get_current_user
 from src.core.client_management.service import (
     practice_service,
@@ -216,7 +217,7 @@ async def create_practice(
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
-@router.get("/practices", response_model=list[PracticeResponse])
+@router.get("/practices", response_model=PaginatedResponse[PracticeResponse])
 async def list_practices(
     status: PracticeStatus | None = None,
     search: str | None = None,
@@ -227,6 +228,15 @@ async def list_practices(
 ):
     """List all practices. Admins see all; managers see assigned only."""
     try:
+        # Build count query with same filters as the service
+        count_query = select(func.count(Practice.id))
+        if status:
+            count_query = count_query.where(Practice.status == status.value)
+        if search:
+            count_query = count_query.where(Practice.practice_name.ilike(f"%{search}%"))
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
         practices = await practice_service.list_practices(
             db=db,
             status=status.value if status else None,
@@ -234,7 +244,7 @@ async def list_practices(
             page=page,
             page_size=page_size,
         )
-        return practices
+        return {"items": practices, "total": total, "page": page, "page_size": page_size}
     except ClientManagementError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
@@ -411,13 +421,27 @@ async def add_location(
 @router.get("/practices/{practice_id}/locations")
 async def list_locations(
     practice_id: UUID,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(PracticeLocation).where(PracticeLocation.practice_id == practice_id)
+    # Total count
+    count_result = await db.execute(
+        select(func.count()).select_from(PracticeLocation).where(
+            PracticeLocation.practice_id == practice_id
+        )
     )
-    return list(result.scalars().all())
+    total = count_result.scalar() or 0
+
+    result = await db.execute(
+        select(PracticeLocation)
+        .where(PracticeLocation.practice_id == practice_id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    locations = list(result.scalars().all())
+    return {"items": locations, "total": total, "page": page, "page_size": page_size}
 
 
 # ── Providers ────────────────────────────────────────────────────
@@ -448,12 +472,21 @@ async def add_provider(
 @router.get("/practices/{practice_id}/providers")
 async def list_practice_providers(
     practice_id: UUID,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     try:
         providers = await provider_service.list_practice_providers(db=db, practice_id=practice_id)
-        return providers
+        total = len(providers)
+        start = (page - 1) * page_size
+        return {
+            "items": providers[start : start + page_size],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
     except ClientManagementError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
@@ -486,6 +519,8 @@ async def add_payer_enrollment(
 @router.get("/practices/{practice_id}/payer-enrollments")
 async def list_payer_enrollments(
     practice_id: UUID,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -493,7 +528,14 @@ async def list_payer_enrollments(
         enrollments = await payer_enrollment_service.list_payer_enrollments(
             db=db, practice_id=practice_id
         )
-        return enrollments
+        total = len(enrollments)
+        start = (page - 1) * page_size
+        return {
+            "items": enrollments[start : start + page_size],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
     except ClientManagementError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
@@ -543,6 +585,8 @@ async def import_fee_schedule(
 @router.get("/practices/{practice_id}/fee-schedules")
 async def list_fee_schedules(
     practice_id: UUID,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -555,15 +599,25 @@ async def list_fee_schedules(
     )
     enrollments = list(result.scalars().all())
     if not enrollments:
-        return []
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
     # Fetch the actual fee schedules
     from src.infrastructure.database.models import FeeSchedule
+
     schedule_ids = [e.fee_schedule_id for e in enrollments if e.fee_schedule_id]
-    result = await db.execute(
-        select(FeeSchedule).where(FeeSchedule.id.in_(schedule_ids))
+    count_result = await db.execute(
+        select(func.count()).select_from(FeeSchedule).where(FeeSchedule.id.in_(schedule_ids))
     )
-    return list(result.scalars().all())
+    total = count_result.scalar() or 0
+
+    result = await db.execute(
+        select(FeeSchedule)
+        .where(FeeSchedule.id.in_(schedule_ids))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    schedules = list(result.scalars().all())
+    return {"items": schedules, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/practices/{practice_id}/fee-schedules/{schedule_id}/rates")
@@ -571,15 +625,36 @@ async def get_fee_schedule_rates(
     practice_id: UUID,
     schedule_id: UUID,
     cpt_code: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     from src.infrastructure.database.models import FeeScheduleRate
-    query = select(FeeScheduleRate).where(FeeScheduleRate.fee_schedule_id == schedule_id)
+
+    # Build base filter
+    base_where = FeeScheduleRate.fee_schedule_id == schedule_id
     if cpt_code:
-        query = query.where(FeeScheduleRate.cpt_code == cpt_code)
+        base_where = (FeeScheduleRate.fee_schedule_id == schedule_id) & (
+            FeeScheduleRate.cpt_code == cpt_code
+        )
+
+    # Total count
+    count_result = await db.execute(
+        select(func.count()).select_from(FeeScheduleRate).where(base_where)
+    )
+    total = count_result.scalar() or 0
+
+    # Fetch paginated results
+    query = (
+        select(FeeScheduleRate)
+        .where(base_where)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     result = await db.execute(query)
-    return list(result.scalars().all())
+    rates = list(result.scalars().all())
+    return {"items": rates, "total": total, "page": page, "page_size": page_size}
 
 
 # ── Service Agreement ────────────────────────────────────────────
@@ -702,6 +777,8 @@ async def assign_staff(
 @router.get("/practices/{practice_id}/staff-assignments")
 async def list_staff_assignments(
     practice_id: UUID,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -709,7 +786,14 @@ async def list_staff_assignments(
         assignments = await staff_assignment_service.list_staff_assignments(
             db=db, practice_id=practice_id
         )
-        return assignments
+        total = len(assignments)
+        start = (page - 1) * page_size
+        return {
+            "items": assignments[start : start + page_size],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
     except ClientManagementError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
@@ -761,12 +845,21 @@ async def create_portal_user(
 @router.get("/practices/{practice_id}/portal-users")
 async def list_portal_users(
     practice_id: UUID,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     try:
         users = await portal_user_service.list_portal_users(db=db, practice_id=practice_id)
-        return users
+        total = len(users)
+        start = (page - 1) * page_size
+        return {
+            "items": users[start : start + page_size],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
     except ClientManagementError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
@@ -853,7 +946,7 @@ async def get_dashboard(
     """Return dashboard summary for client management."""
     # Count active practices
     active_result = await db.execute(
-        select(func.count()).select(Practice).where(Practice.status == "active")
+        select(func.count()).select_from(Practice).where(Practice.status == "active")
     )
     active_practices = active_result.scalar() or 0
 

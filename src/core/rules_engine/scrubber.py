@@ -235,19 +235,73 @@ class ClaimScrubber:
         return findings
 
     def _check_pos_consistency(self, claim: dict) -> list[ScrubFinding]:
-        """Check Place of Service consistency with procedure codes."""
+        """
+        Check Place of Service consistency with procedure codes.
+
+        Rules:
+        - POS 11 (office): should not have facility-only CPTs (99231-99233, 99238, 99239)
+        - POS 21/22/23 (hospital): should not have office-only CPTs (99202-99215)
+        - POS 12 (home): CPTs should be home visit codes (99341-99350)
+        """
         findings = []
         pos = claim.get("place_of_service", "")
+
+        # Facility-only inpatient subsequent care / discharge codes
+        facility_only_cpts = set()
+        for c in range(99231, 99234):  # 99231-99233
+            facility_only_cpts.add(str(c))
+        facility_only_cpts.update({"99238", "99239"})
+
+        # Office-only outpatient E/M codes (new and established patient)
+        office_only_cpts = set()
+        for c in range(99202, 99216):  # 99202-99215
+            office_only_cpts.add(str(c))
+
+        # Home visit codes
+        home_visit_cpts = set()
+        for c in range(99341, 99351):  # 99341-99350
+            home_visit_cpts.add(str(c))
 
         for i, line in enumerate(claim.get("claim_lines", [])):
             code = line.get("cpt_code", "")
             line_pos = line.get("place_of_service", pos)
 
-            # Facility vs non-facility checks
-            facility_pos = {"21", "22", "23", "24", "26", "31", "34", "41", "42", "51", "52", "53", "56", "61"}
-            if line_pos in facility_pos:
-                # Certain codes should not be billed with facility POS by professionals
-                pass  # TODO: Implement facility/non-facility rate logic
+            # POS 11 (Office) with facility-only codes
+            if line_pos == "11" and code in facility_only_cpts:
+                findings.append(ScrubFinding(
+                    rule_type=RuleType.POS_TOS,
+                    severity=RuleSeverity.WARNING,
+                    message=f"Line {i+1}: CPT {code} is a facility-only code but POS is 11 (Office)",
+                    suggestion=f"Verify POS is correct. Inpatient codes {code} are typically billed with hospital POS (21/22/23).",
+                    claim_line_number=i + 1,
+                    rule_reference="CMS POS Guidelines",
+                ))
+
+            # POS 21/22/23 (Hospital inpatient/outpatient/ER) with office-only codes
+            elif line_pos in {"21", "22", "23"} and code in office_only_cpts:
+                pos_labels = {"21": "Inpatient Hospital", "22": "On-Campus Outpatient", "23": "Emergency Room"}
+                pos_label = pos_labels.get(line_pos, f"Hospital POS {line_pos}")
+                findings.append(ScrubFinding(
+                    rule_type=RuleType.POS_TOS,
+                    severity=RuleSeverity.WARNING,
+                    message=f"Line {i+1}: CPT {code} is an office-only E/M code but POS is {line_pos} ({pos_label})",
+                    suggestion=f"Verify POS is correct. Office E/M codes {code} should be billed with POS 11.",
+                    claim_line_number=i + 1,
+                    rule_reference="CMS POS Guidelines",
+                ))
+
+            # POS 12 (Home) with non-home-visit codes
+            elif line_pos == "12" and code and code not in home_visit_cpts:
+                # Only flag if it's an E/M code (starts with 99) to avoid false positives on procedures
+                if code.startswith("99") and len(code) == 5:
+                    findings.append(ScrubFinding(
+                        rule_type=RuleType.POS_TOS,
+                        severity=RuleSeverity.WARNING,
+                        message=f"Line {i+1}: CPT {code} used with POS 12 (Home) — expected home visit codes (99341-99350)",
+                        suggestion="Use home visit CPT codes (99341-99350) for home POS, or verify POS is correct.",
+                        claim_line_number=i + 1,
+                        rule_reference="CMS POS Guidelines",
+                    ))
 
         return findings
 
@@ -278,9 +332,46 @@ class ClaimScrubber:
         return findings
 
     def _check_duplicates(self, claim: dict) -> list[ScrubFinding]:
-        """Check for potential duplicate claim submissions."""
-        # TODO: Query database for existing claims with same patient, DOS, codes, payer
-        return []
+        """
+        Check for potential duplicate claim submissions.
+
+        Inter-claim duplicate detection requires DB access (not available here).
+        This pass checks for intra-claim duplicates: two lines on the same claim
+        with the same CPT code, flagging as potential duplicate billing.
+        """
+        findings = []
+        lines = claim.get("claim_lines", [])
+
+        # Build a map of (cpt_code, service_date) → list of line indices
+        seen: dict[tuple, list[int]] = {}
+        for i, line in enumerate(lines):
+            code = line.get("cpt_code", "")
+            service_date = line.get("service_date", claim.get("service_date", ""))
+            key = (code, str(service_date))
+            if key not in seen:
+                seen[key] = []
+            seen[key].append(i)
+
+        for (code, service_date), line_indices in seen.items():
+            if len(line_indices) > 1 and code:
+                line_nums = [str(idx + 1) for idx in line_indices]
+                findings.append(ScrubFinding(
+                    rule_type=RuleType.DUPLICATE,
+                    severity=RuleSeverity.ERROR,
+                    message=(
+                        f"Intra-claim duplicate: CPT {code} appears on lines {', '.join(line_nums)}"
+                        + (f" for service date {service_date}" if service_date else "")
+                    ),
+                    suggestion=(
+                        f"Remove duplicate line(s) for CPT {code}, or add appropriate modifiers "
+                        "(e.g., 59, 76, 77) if the service was genuinely performed multiple times."
+                    ),
+                    auto_fixable=False,
+                    claim_line_number=line_indices[0] + 1,
+                    rule_reference="CMS Duplicate Claim Policy",
+                ))
+
+        return findings
 
     def _check_timely_filing(self, claim: dict) -> list[ScrubFinding]:
         """Check if claim is within payer's timely filing limit."""
@@ -310,32 +401,192 @@ class ClaimScrubber:
         return findings
 
     def _check_age_gender(self, claim: dict) -> list[ScrubFinding]:
-        """Check code appropriateness for patient age and gender."""
+        """
+        Check CPT code appropriateness for patient age and gender.
+
+        Rules:
+        - Pediatric codes (99381-99385): patient age must be < 18
+        - OB/GYN codes (59400, 59410, 59430, 58150, 58260, 58550): female gender required
+        - PSA screening (86316, G0103): male gender required
+        - Neonatal codes (99460-99465): patient age must be < 1
+        """
         findings = []
         age = claim.get("patient_age")
-        gender = claim.get("patient_gender", "").upper()
+        gender = claim.get("patient_gender", "").upper().strip()
+
+        # Define rule sets as (cpt_set, condition_fn, message_template)
+        pediatric_codes = {str(c) for c in range(99381, 99386)}  # 99381-99385
+        obgyn_codes = {"59400", "59410", "59430", "58150", "58260", "58550"}
+        psa_codes = {"86316", "G0103"}
+        neonatal_codes = {str(c) for c in range(99460, 99466)}  # 99460-99465
 
         for i, line in enumerate(claim.get("claim_lines", [])):
             code = line.get("cpt_code", "")
-            # TODO: Cross-reference CPT codes with age/gender appropriateness table
-            # e.g., OB codes for male patients, pediatric codes for adults
+            if not code:
+                continue
+
+            # Pediatric preventive codes: require age < 18
+            if code in pediatric_codes:
+                if age is not None and age >= 18:
+                    findings.append(ScrubFinding(
+                        rule_type=RuleType.AGE_GENDER,
+                        severity=RuleSeverity.ERROR,
+                        message=(
+                            f"Line {i+1}: CPT {code} is a pediatric preventive code "
+                            f"but patient age is {age} (must be < 18)"
+                        ),
+                        suggestion="Use adult preventive CPT codes (99386-99387) for patients age 18+.",
+                        claim_line_number=i + 1,
+                        rule_reference="CPT Preventive Medicine Guidelines",
+                    ))
+
+            # OB/GYN codes: require female gender
+            elif code in obgyn_codes:
+                if gender and gender not in ("F", "FEMALE"):
+                    findings.append(ScrubFinding(
+                        rule_type=RuleType.AGE_GENDER,
+                        severity=RuleSeverity.ERROR,
+                        message=(
+                            f"Line {i+1}: CPT {code} is an OB/GYN procedure code "
+                            f"but patient gender is recorded as '{gender}'"
+                        ),
+                        suggestion="Verify patient gender. OB/GYN codes require female patient.",
+                        claim_line_number=i + 1,
+                        rule_reference="CPT OB/GYN Section Guidelines",
+                    ))
+
+            # PSA screening codes: require male gender
+            elif code in psa_codes:
+                if gender and gender not in ("M", "MALE"):
+                    findings.append(ScrubFinding(
+                        rule_type=RuleType.AGE_GENDER,
+                        severity=RuleSeverity.ERROR,
+                        message=(
+                            f"Line {i+1}: CPT {code} is a PSA screening code "
+                            f"but patient gender is recorded as '{gender}'"
+                        ),
+                        suggestion="Verify patient gender. PSA screening requires male patient.",
+                        claim_line_number=i + 1,
+                        rule_reference="CMS PSA Screening Policy",
+                    ))
+
+            # Neonatal codes: require age < 1 (infant)
+            elif code in neonatal_codes:
+                if age is not None and age >= 1:
+                    findings.append(ScrubFinding(
+                        rule_type=RuleType.AGE_GENDER,
+                        severity=RuleSeverity.ERROR,
+                        message=(
+                            f"Line {i+1}: CPT {code} is a neonatal care code "
+                            f"but patient age is {age} (must be < 1 year)"
+                        ),
+                        suggestion="Neonatal codes (99460-99465) are only appropriate for patients under 1 year old.",
+                        claim_line_number=i + 1,
+                        rule_reference="CPT Neonatal Intensive Care Guidelines",
+                    ))
 
         return findings
 
     def _check_payer_rules(self, claim: dict, payer_rules: list[dict]) -> list[ScrubFinding]:
-        """Apply payer-specific billing rules."""
-        findings = []
+        """
+        Apply payer-specific billing rules.
 
+        Built-in rules by payer type:
+        - Medicare: require referring provider NPI for specialist claims
+        - Medicaid: flag lines > $10,000 for manual review
+        - Commercial: flag surgery CPTs (10000-69999) without prior auth number
+        """
+        findings = []
+        payer_name = (claim.get("payer_name") or claim.get("payer", "")).upper()
+        lines = claim.get("claim_lines", [])
+
+        # ── Medicare rules ──────────────────────────────────────────────
+        if "MEDICARE" in payer_name:
+            referring_npi = claim.get("referring_provider_npi", "").strip()
+            rendering_npi = claim.get("rendering_provider_npi", "").strip()
+            specialty_code = claim.get("rendering_provider_specialty", "").strip()
+
+            # PCP specialty codes (family practice, general practice, internal medicine, etc.)
+            pcp_specialty_codes = {"01", "08", "11", "38", "84"}
+
+            # Flag missing referring NPI for non-PCP specialists
+            if (
+                specialty_code
+                and specialty_code not in pcp_specialty_codes
+                and not referring_npi
+            ):
+                findings.append(ScrubFinding(
+                    rule_type=RuleType.PAYER_SPECIFIC,
+                    severity=RuleSeverity.WARNING,
+                    message=(
+                        f"Medicare: Referring provider NPI is missing for specialist claim "
+                        f"(specialty {specialty_code})"
+                    ),
+                    suggestion="Add referring provider NPI (Box 17b on CMS-1500). Required for Medicare specialist claims.",
+                    rule_reference="Medicare Claims Processing Manual Ch. 26",
+                ))
+
+        # ── Medicaid rules ──────────────────────────────────────────────
+        if "MEDICAID" in payer_name:
+            for i, line in enumerate(lines):
+                charge = line.get("charge_amount", 0) or 0
+                try:
+                    charge = float(charge)
+                except (TypeError, ValueError):
+                    charge = 0.0
+
+                if charge > 10000.0:
+                    findings.append(ScrubFinding(
+                        rule_type=RuleType.PAYER_SPECIFIC,
+                        severity=RuleSeverity.WARNING,
+                        message=(
+                            f"Line {i+1}: Medicaid claim line charge ${charge:,.2f} exceeds $10,000 — "
+                            f"flagged for manual review"
+                        ),
+                        suggestion="Verify charge amount is correct. High-dollar Medicaid claims may require additional documentation.",
+                        claim_line_number=i + 1,
+                        rule_reference="Medicaid High-Dollar Claim Review Policy",
+                    ))
+
+        # ── Commercial insurance rules ──────────────────────────────────
+        is_commercial = (
+            payer_name
+            and "MEDICARE" not in payer_name
+            and "MEDICAID" not in payer_name
+        )
+        if is_commercial:
+            prior_auth = (claim.get("prior_auth_number") or "").strip()
+            for i, line in enumerate(lines):
+                code = line.get("cpt_code", "")
+                # Surgery range: 10000-69999
+                try:
+                    code_int = int(code)
+                    is_surgery = 10000 <= code_int <= 69999
+                except (ValueError, TypeError):
+                    is_surgery = False
+
+                if is_surgery and not prior_auth:
+                    findings.append(ScrubFinding(
+                        rule_type=RuleType.PAYER_SPECIFIC,
+                        severity=RuleSeverity.WARNING,
+                        message=(
+                            f"Line {i+1}: Surgical CPT {code} submitted without prior authorization number"
+                        ),
+                        suggestion=(
+                            "Obtain and enter prior authorization number before submitting. "
+                            "Commercial payers typically require prior auth for surgical procedures."
+                        ),
+                        auto_fixable=False,
+                        claim_line_number=i + 1,
+                        rule_reference="Commercial Payer Prior Authorization Requirements",
+                    ))
+
+        # ── Dynamic payer rules from payer intelligence module ──────────
         for rule in payer_rules:
             rule_type = rule.get("rule_type", "")
             definition = rule.get("rule_definition", {})
-
-            # TODO: Implement payer-specific rule evaluation
-            # Examples:
-            # - Auth required for specific CPT codes
-            # - Frequency limits (e.g., colonoscopy every 10 years)
-            # - Specific modifier requirements
-            # - Pre-cert requirements
+            # Dynamic rule evaluation placeholder — extend as payer intelligence grows
+            # rule_type examples: "frequency_limit", "pre_cert_required", "modifier_required"
 
         return findings
 

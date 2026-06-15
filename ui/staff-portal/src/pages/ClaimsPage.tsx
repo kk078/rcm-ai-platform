@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { FileText, Search, Filter } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse, safeNumber } from '../lib/apiHelpers';
 
 interface Claim {
   id: string;
@@ -15,21 +17,15 @@ interface Claim {
   submitted_at: string | null;
 }
 
-interface ClaimsResponse {
-  items: Claim[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
 const STATUSES = ['all', 'draft', 'submitted', 'accepted', 'denied', 'paid', 'partially_paid'] as const;
 
 export function ClaimsPage() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery<ClaimsResponse>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['claims', status, page],
     queryFn: () =>
       api
@@ -38,6 +34,9 @@ export function ClaimsPage() {
         })
         .then((r) => r.data),
   });
+
+  const data = normalizeListResponse<Claim>(rawData);
+  const total = data.total;
 
   const statusColor = (s: string) => {
     const colors: Record<string, string> = {
@@ -51,18 +50,18 @@ export function ClaimsPage() {
     return colors[s] || 'bg-gray-100 text-gray-700';
   };
 
-  const filtered = data?.items.filter(
+  const filtered = data.items.filter(
     (c) =>
       !search ||
       c.claim_number.toLowerCase().includes(search.toLowerCase()) ||
-      c.patient_name.toLowerCase().includes(search.toLowerCase()),
+      (c.patient_name ?? '').toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Claims</h1>
-        <p className="mt-1 text-sm text-gray-500">{data?.total ?? 0} total claims</p>
+        <p className="mt-1 text-sm text-gray-500">{total} total claims</p>
       </div>
 
       <div className="mb-4 flex items-center gap-3">
@@ -111,14 +110,18 @@ export function ClaimsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered?.map((claim) => (
-                <tr key={claim.id} className="hover:bg-gray-50">
+              {filtered.map((claim) => (
+                <tr
+                  key={claim.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => navigate(`/claims/${claim.id}`)}
+                >
                   <td className="px-4 py-3 text-sm font-medium text-brand-600">{claim.claim_number}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900">{claim.patient_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{claim.practice_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{claim.payer_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900">${claim.total_charge.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{claim.date_of_service}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{claim.patient_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{claim.practice_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{claim.payer_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">${safeNumber(claim.total_charge).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{claim.date_of_service ?? '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(claim.status)}`}>
                       {claim.status.replace('_', ' ')}
@@ -126,7 +129,7 @@ export function ClaimsPage() {
                   </td>
                 </tr>
               ))}
-              {(!filtered?.length) && (
+              {filtered.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
                     <FileText className="mx-auto mb-2 h-8 w-8 text-gray-300" />
@@ -136,6 +139,25 @@ export function ClaimsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {total > 20 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-gray-500">
+          <span>Page {page} of {Math.ceil(total / 20)}</span>
+          <div className="flex gap-2">
+            <button
+              disabled={page === 1}
+              onClick={() => setPage(p => p - 1)}
+              className="rounded border border-gray-300 px-3 py-1 disabled:opacity-40 hover:bg-gray-50"
+            >Prev</button>
+            <button
+              disabled={page * 20 >= total}
+              onClick={() => setPage(p => p + 1)}
+              className="rounded border border-gray-300 px-3 py-1 disabled:opacity-40 hover:bg-gray-50"
+            >Next</button>
+          </div>
         </div>
       )}
     </div>

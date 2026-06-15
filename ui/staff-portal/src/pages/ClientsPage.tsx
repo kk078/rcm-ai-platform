@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, Search } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse } from '../lib/apiHelpers';
 
 interface Practice {
   id: string;
@@ -18,23 +19,26 @@ interface Practice {
 
 export function ClientsPage() {
   const [search, setSearch] = useState('');
-  const { data, isLoading } = useQuery<Practice[]>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['clients'],
     queryFn: () =>
       api
         .get('/clients/practices')
-        .then((r) => Array.isArray(r.data) ? r.data : r.data.items || []),
+        .then((r) => r.data),
   });
 
-  const filtered = data?.filter(
-    (c) => !search || c.practice_name.toLowerCase().includes(search.toLowerCase()),
+  const data = normalizeListResponse<Practice>(rawData);
+  const items = data.items;
+
+  const filtered = items.filter(
+    (c) => !search || (c.practice_name ?? '').toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Client Management</h1>
-        <p className="mt-1 text-sm text-gray-500">{filtered?.length ?? 0} practices</p>
+        <p className="mt-1 text-sm text-gray-500">{filtered.length} practices</p>
       </div>
 
       <div className="mb-4">
@@ -58,7 +62,7 @@ export function ClientsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-4">
-          {filtered?.map((practice) => (
+          {filtered.map((practice) => (
             <div key={practice.id} className="rounded-xl border border-gray-200 bg-white p-5 hover:shadow-sm transition-shadow">
               <div className="flex items-center gap-3 mb-3">
                 <div className="h-10 w-10 rounded-lg bg-brand-50 flex items-center justify-center">
@@ -93,7 +97,7 @@ export function ClientsPage() {
               </div>
             </div>
           ))}
-          {(!filtered?.length) && (
+          {filtered.length === 0 && (
             <div className="col-span-3 py-12 text-center text-sm text-gray-500">
               <Building2 className="mx-auto mb-2 h-8 w-8 text-gray-300" />
               No clients found

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Code, Search } from 'lucide-react';
 import api from '../lib/api';
+import { normalizeListResponse, safeNumber, formatDate } from '../lib/apiHelpers';
 
 interface CodingSession {
   id: string;
@@ -15,36 +16,35 @@ interface CodingSession {
   completed_at: string | null;
 }
 
-interface SessionsResponse {
-  items: CodingSession[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
 export function CodingPage() {
   const [search, setSearch] = useState('');
 
-  const { data, isLoading } = useQuery<SessionsResponse>({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['coding-sessions'],
     queryFn: () =>
       api
-        .get('/coding/sessions/', { params: { page_size: 20 } })
+        .get('/coding/sessions', { params: { page_size: 20 } })
         .then((r) => r.data),
   });
+
+  const data = normalizeListResponse<CodingSession>(rawData);
 
   const statusBadge = (s: string) => {
     const colors: Record<string, string> = {
       pending: 'bg-gray-100 text-gray-700',
       in_progress: 'bg-blue-100 text-blue-700',
+      in_review: 'bg-yellow-100 text-yellow-700',
+      processing: 'bg-yellow-100 text-yellow-700',
       completed: 'bg-green-100 text-green-700',
+      complete: 'bg-green-100 text-green-700',
       reviewed: 'bg-purple-100 text-purple-700',
+      needs_clarification: 'bg-orange-100 text-orange-700',
     };
     return colors[s] || 'bg-gray-100 text-gray-700';
   };
 
-  const filtered = data?.items.filter(
-    (s) => !search || s.patient_name.toLowerCase().includes(search.toLowerCase()),
+  const filtered = data.items.filter(
+    (s) => !search || (s.patient_name ?? '').toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
@@ -75,40 +75,40 @@ export function CodingPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered?.map((session) => (
+          {filtered.map((session) => (
             <div key={session.id} className="rounded-lg border border-gray-200 bg-white p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">
                     <Code className="h-4 w-4 text-brand-600" />
-                    <span className="font-medium text-gray-900">{session.patient_name}</span>
+                    <span className="font-medium text-gray-900">{session.patient_name ?? '—'}</span>
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(session.status)}`}>
                       {session.status.replace('_', ' ')}
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-gray-500">
-                    Encounter: {session.encounter_id} · Created: {session.created_at}
+                    Enc #{session.encounter_id.slice(0, 8).toUpperCase()} · Created: {formatDate(session.created_at)}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-gray-500">Confidence</p>
-                  <p className="text-lg font-semibold text-gray-900">{(session.confidence * 100).toFixed(0)}%</p>
+                  <p className="text-lg font-semibold text-gray-900">{(safeNumber(session.confidence) * 100).toFixed(0)}%</p>
                 </div>
               </div>
               <div className="mt-3 flex gap-4">
                 <div>
                   <p className="text-xs text-gray-500">Suggested Codes</p>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {session.suggested_codes.map((code) => (
+                    {(Array.isArray(session.suggested_codes) ? session.suggested_codes : []).map((code) => (
                       <span key={code} className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{code}</span>
                     ))}
                   </div>
                 </div>
-                {session.coder_codes.length > 0 && (
+                {(Array.isArray(session.coder_codes) ? session.coder_codes : []).length > 0 && (
                   <div>
                     <p className="text-xs text-gray-500">Coder Codes</p>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {session.coder_codes.map((code) => (
+                      {(Array.isArray(session.coder_codes) ? session.coder_codes : []).map((code) => (
                         <span key={code} className="rounded bg-green-50 px-2 py-0.5 text-xs text-green-700">{code}</span>
                       ))}
                     </div>
@@ -117,7 +117,7 @@ export function CodingPage() {
               </div>
             </div>
           ))}
-          {(!filtered?.length) && (
+          {filtered.length === 0 && (
             <div className="py-12 text-center text-sm text-gray-500">
               <Code className="mx-auto mb-2 h-8 w-8 text-gray-300" />
               No coding sessions found

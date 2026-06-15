@@ -30,12 +30,33 @@ class Base(DeclarativeBase):
     pass
 
 
+def get_engine():
+    """Return the async SQLAlchemy engine (used by readiness checks)."""
+    return engine
+
+
+async def _create_tables():
+    """
+    Create all SQLAlchemy-defined tables that do not already exist.
+    Importing models here (rather than at module level) avoids the circular
+    import: models.py -> session.py (Base) -> models.py.
+    """
+    try:
+        import src.infrastructure.database.models  # noqa: F401 — registers all models with Base.metadata
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("database_tables_ensured")
+    except Exception as e:
+        logger.warning("database_table_creation_failed", error=str(e))
+
+
 async def init_db():
-    """Initialize database connection and verify connectivity."""
+    """Initialize database connection and verify connectivity, then ensure all tables exist."""
     try:
         async with engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
         logger.info("database_connected", url=settings.database_url.split("@")[-1])
+        await _create_tables()
     except Exception as e:
         logger.warning(
             "database_connection_failed",
