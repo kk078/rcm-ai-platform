@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.models import (
-    PatientDocument, Patient, Payer, Coverage, EligibilityCheck,
+    PatientDocument, Patient, Payer, Coverage, EligibilityCheck, Practice,
 )
 from src.core.eligibility.plan_types import normalize_plan_type
 from src.core.knowledge.service import extract_text_from_file
@@ -71,7 +71,8 @@ def _pct(v) -> int | None:
     f = _money(v)
     if f is None:
         return None
-    return int(round(f * 100)) if f <= 1 else int(round(f))
+    p = int(round(f * 100)) if f <= 1 else int(round(f))
+    return p if 0 <= p <= 100 else None  # reject mis-mapped dollar amounts (coinsurance is a %)
 
 
 async def classify_and_extract(text: str) -> dict:
@@ -101,6 +102,15 @@ async def classify_and_extract(text: str) -> dict:
     except Exception as e:  # noqa: BLE001
         logger.warning("doc_intake_extract_failed", error=str(e))
         return {}
+
+
+async def _resolve_practice(db: AsyncSession, practice_id):
+    """Patient records require a practice. If the uploader has none (e.g. a company-admin),
+    fall back to the primary (first) practice so patient docs still land somewhere sensible."""
+    if practice_id is not None:
+        return practice_id
+    p = (await db.execute(select(Practice).order_by(Practice.created_at).limit(1))).scalar_one_or_none()
+    return p.id if p else None
 
 
 async def _resolve_patient(db: AsyncSession, practice_id, p: dict) -> Patient | None:
@@ -187,6 +197,8 @@ async def ingest_patient_document(
                 "patient_id": str(dup.patient_id) if dup.patient_id else None,
                 "message": f"Duplicate of an already-ingested document ({dup.doc_type})."}
 
+    practice_id = await _resolve_practice(db, practice_id)  # patient records require a practice
+
     if parsed is None:
         parsed = await classify_and_extract(text)
     doc_type = parsed.get("doc_type") if parsed.get("doc_type") in DOC_TYPES else "other"
@@ -221,7 +233,7 @@ async def ingest_patient_document(
                 deductible_amount=_money(b.get("deductible")),
                 deductible_met=_money(b.get("deductible_met")),
                 coinsurance_pct=_pct(b.get("coinsurance_pct")),
-                verified_at=datetime.now(timezone.utc), is_active=True,
+                verified_at=datetime.now(timezone.utc).replace(tzinfo=None), is_active=True,
             )
             db.add(coverage)
             await db.flush()
@@ -232,7 +244,7 @@ async def ingest_patient_document(
             coverage_id=coverage.id if coverage else None,
             payer_id=payer.id if payer else None,
             status="active" if active else "inactive", is_active=active,
-            check_date=datetime.now(timezone.utc), service_date=date.today(),
+            check_date=datetime.now(timezone.utc).replace(tzinfo=None), service_date=date.today(),
             plan_name=b.get("plan_name"), plan_type=plan_type,
             network_status=b.get("network_status") or "unknown",
             deductible_total=_money(b.get("deductible")),
