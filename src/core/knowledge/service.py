@@ -30,6 +30,39 @@ _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _WS_RE = re.compile(r"[ \t\f\v]+")
 _MULTINL_RE = re.compile(r"\n{3,}")
 
+# ── PHI de-identification: the reference library stores NON-PHI knowledge ONLY.
+# Genuine patient documents are routed to the operational tables; this is the
+# deterministic backstop that scrubs HIPAA direct identifiers from anything that
+# still reaches the KB (a payer/CMS doc that happens to embed a patient example).
+_PHI_LABELED_RE = re.compile(
+    r"(?im)^[ \t]*(patient(?:\s*name)?|name|member(?:\s*(?:id|name|no|#))?|subscriber(?:\s*(?:id|name|no|#))?|"
+    r"policy(?:\s*(?:id|number|no|#))?|group(?:\s*(?:number|no|#))|mrn|medical\s*record(?:\s*(?:no|number|#))?|"
+    r"guarantor|insured(?:\s*name)?|account(?:\s*(?:no|number|#))?)[ \t]*[:#][ \t]*.+$"
+)
+_DOB_RE = re.compile(
+    r"(?i)\b(dob|d\.?o\.?b\.?|date\s*of\s*birth)\b[ \t]*[:\-]?[ \t]*\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}"
+)
+_SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+_PHONE_RE = re.compile(r"\b\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b")
+_EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+_ADDR_RE = re.compile(
+    r"(?i)\b\d{1,6}\s+(?:[A-Z][A-Za-z]+\.?\s+){1,3}"
+    r"(?:st|street|ave|avenue|rd|road|blvd|dr|drive|lane|ln|way|ct|court|pl|place|ter|terrace|hwy|highway)\b\.?"
+)
+
+
+def _deidentify(text: str) -> str:
+    """Redact HIPAA direct identifiers so no PHI is persisted in the reference KB."""
+    if not text:
+        return text
+    out = _PHI_LABELED_RE.sub(lambda m: f"{m.group(1)}: [REDACTED]", text)
+    out = _DOB_RE.sub(lambda m: f"{m.group(1)}: [REDACTED]", out)
+    out = _SSN_RE.sub("[SSN]", out)
+    out = _PHONE_RE.sub("[PHONE]", out)
+    out = _EMAIL_RE.sub("[EMAIL]", out)
+    out = _ADDR_RE.sub("[ADDRESS]", out)
+    return out
+
 
 def extract_urls(text: str | None) -> list[str]:
     """Return distinct http(s) URLs found in free text (trailing punctuation trimmed)."""
@@ -116,6 +149,7 @@ async def ingest_text(
 
 
 async def _store(db, *, practice_id, title, url, source_type, content, added_by_id, tags):
+    content = _deidentify(content)  # KB is NON-PHI: scrub identifiers before hashing/storing
     chash = _hash(content)
     # Dedupe within a practice scope by content hash; refresh fetched_at if unchanged.
     existing = (await db.execute(
