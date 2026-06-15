@@ -993,6 +993,9 @@ async def open_ar(
         "balance": round(bal, 2), "charges": m.get("charges"), "bucket": b,
         "aging_days": m.get("aging_days"), "service_date": m.get("service_date"),
         "is_credit": is_credit, "action": m.get("action"),
+        "recommendation": m.get("recommendation"),
+        "rec_reasoning": m.get("rec_reasoning"),
+        "rec_confidence": m.get("rec_confidence"),
         "due_date": it.due_date.isoformat() if it.due_date else None,
     } for (it, m, b, bal, is_credit) in page_items]
 

@@ -609,6 +609,9 @@ async def _fan_out() -> dict[str, Any]:
             .where(
                 WorkQueueItem.status == "pending",
                 WorkQueueItem.queue_type.in_(DISPATCHABLE_QUEUE_TYPES),
+                # Imported open-AR is triaged by its own task (no claim entity to enrich);
+                # keep it out of the generic agent path so notes aren't clobbered.
+                WorkQueueItem.item_type != "external_ar",
             )
             .order_by(
                 WorkQueueItem.priority.asc(),    # lower number = higher urgency

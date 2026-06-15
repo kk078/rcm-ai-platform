@@ -87,6 +87,10 @@ celery_app.conf.update(
             "task": "src.core.ai_dispatch.tasks.dispatch_pending_ai_items",
             "schedule": 300.0,  # Every 5 minutes
         },
+        "triage-open-ar": {
+            "task": "src.core.ar_intake.tasks.triage_open_ar",
+            "schedule": 600.0,  # Every 10 minutes — throttled AI AR follow-up triage
+        },
     },
 )
 
@@ -103,4 +107,5 @@ celery_app.autodiscover_tasks([
     "src.core.error_intelligence",  # AI auto-debugging
     "src.core.ai_dispatch",         # Autonomous AI queue processing
     "src.core.document_intake",     # Background upload ingestion (OCR + classify)
+    "src.core.ar_intake",           # AI triage of imported open AR
 ])

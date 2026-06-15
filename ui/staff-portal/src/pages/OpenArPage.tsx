@@ -10,7 +10,15 @@ interface ArItem {
   claim_no: string; payer: string; patient: string; balance: number;
   charges: number; bucket: string; aging_days: string; service_date: string;
   is_credit: boolean; action: string;
+  recommendation?: string | null; rec_reasoning?: string | null; rec_confidence?: number | null;
 }
+
+const REC_LABEL: Record<string, string> = {
+  rebill: 'Rebill', corrected_claim: 'Corrected claim', appeal: 'Appeal',
+  call_payer: 'Call payer', secondary_billing: 'Bill secondary',
+  patient_balance: 'Patient balance', adjust_writeoff: 'Adjust / write-off',
+  resolve_credit: 'Resolve credit',
+};
 interface ArResponse {
   summary: { open_ar_total: number; claim_count: number; buckets: Record<string, { count: number; balance: number }> };
   items: ArItem[]; total: number;
@@ -94,13 +102,14 @@ export function OpenArPage() {
                 <th className="px-4 py-3">Priority</th><th className="px-4 py-3">Payer</th>
                 <th className="px-4 py-3">Patient</th><th className="px-4 py-3">Claim #</th>
                 <th className="px-4 py-3">Bucket</th><th className="px-4 py-3">Days</th>
-                <th className="px-4 py-3 text-right">Balance</th><th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Balance</th>
+                <th className="px-4 py-3">AI recommendation</th><th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {items.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400">No open AR. Import a provider's aging file from the Onboard Provider screen.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400">No open AR. Import a provider's aging file from the Onboard Provider screen.</td></tr>
               ) : items.map((it) => (
                 <tr key={it.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><span className={`text-xs font-medium px-2 py-0.5 rounded-full ${it.priority_label === 'critical' ? 'bg-red-100 text-red-700' : it.priority_label === 'high' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>{it.priority_label}</span></td>
@@ -110,6 +119,7 @@ export function OpenArPage() {
                   <td className="px-4 py-3"><span className={it.bucket === '>120' ? 'text-red-600 font-medium' : 'text-gray-600'}>{it.bucket}</span></td>
                   <td className="px-4 py-3 text-gray-500">{it.aging_days}</td>
                   <td className={`px-4 py-3 text-right font-medium ${it.is_credit ? 'text-amber-600' : 'text-gray-900'}`}>{money(it.balance)}{it.is_credit && <span className="ml-1 text-xs">(credit)</span>}</td>
+                  <td className="px-4 py-3">{it.recommendation ? <span title={it.rec_reasoning || ''} className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{REC_LABEL[it.recommendation] || it.recommendation}</span> : <span className="text-xs text-gray-300">pending triage</span>}</td>
                   <td className="px-4 py-3"><span className="text-xs text-gray-500">{it.status}</span></td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {it.status === 'pending' && <button onClick={() => claim.mutate(it.id)} className="text-xs text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"><Hand className="w-3 h-3" /> Claim</button>}
