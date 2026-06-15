@@ -29,6 +29,7 @@ class EligibilityResponse(BaseModel):
     status: str
     is_active: bool
     plan_name: str | None
+    plan_type: str | None
     group_number: str | None
     network_status: str | None
     deductible_total: float | None

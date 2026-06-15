@@ -318,6 +318,10 @@ class Coverage(Base, TimestampMixin):
         Index("idx_coverages_payer", "payer_id"),
         Index("idx_coverages_member", "member_id"),
         Index("idx_coverages_practice", "practice_id"),
+        CheckConstraint(
+            "plan_type IS NULL OR plan_type IN ('HMO','PPO','POS','EPO','IPA','Indemnity','HDHP','Medicare','Medicaid','Other')",
+            name="ck_coverages_plan_type",
+        ),
     )
 
 
@@ -489,6 +493,7 @@ class EligibilityCheck(TimestampMixin, Base):
     coinsurance_pct: Mapped[int | None] = mapped_column(Integer)
     network_status: Mapped[str | None] = mapped_column(String(20))  # in-network, out-of-network, unknown
     plan_name: Mapped[str | None] = mapped_column(String(200))
+    plan_type: Mapped[str | None] = mapped_column(String(20))  # canonical PLAN_TYPES (see core/eligibility/plan_types.py)
     group_number: Mapped[str | None] = mapped_column(String(100))
     raw_response: Mapped[dict | None] = mapped_column(JSONB)
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -499,6 +504,10 @@ class EligibilityCheck(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_eligibility_checks_practice_patient", "practice_id", "patient_id"),
         Index("ix_eligibility_checks_check_date", "check_date"),
+        CheckConstraint(
+            "plan_type IS NULL OR plan_type IN ('HMO','PPO','POS','EPO','IPA','Indemnity','HDHP','Medicare','Medicaid','Other')",
+            name="ck_eligibility_checks_plan_type",
+        ),
     )
 
 

@@ -8,6 +8,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.infrastructure.database.models import EligibilityCheck, Patient, Coverage, Payer
+from src.core.eligibility.plan_types import normalize_plan_type
 
 logger = structlog.get_logger()
 
@@ -100,6 +101,7 @@ async def _run_coverage_based_check(
         check_date=check_date,
         service_date=svc_date,
         plan_name=getattr(coverage, "plan_name", None),
+        plan_type=normalize_plan_type(getattr(coverage, "plan_type", None)),
         group_number=getattr(coverage, "group_number", None),
         network_status="unknown",
         error_message="; ".join(error_msgs) if error_msgs else None,

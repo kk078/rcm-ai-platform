@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from src.core.eligibility.plan_types import normalize_plan_type
 from typing import Any
 
 from celery import shared_task
@@ -259,7 +260,7 @@ async def _fetch_claim_data(db, item_id: str) -> dict[str, Any]:
                 "member_id": coverage.member_id or "",
                 "group_number": coverage.group_number or "",
                 "plan_name": coverage.plan_name or "",
-                "plan_type": coverage.plan_type or "",
+                "plan_type": normalize_plan_type(coverage.plan_type) or (coverage.plan_type or ""),
             }
 
     return {
