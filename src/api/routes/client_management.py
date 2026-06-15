@@ -236,6 +236,11 @@ class OnboardRequest(BaseModel):
     practice: PracticeCreate
     providers: list[ProviderAdd] = Field(default_factory=list)
     payers: list[PayerEnrollmentCreate] = Field(default_factory=list)
+    billing_guidelines: str | None = None
+
+
+class GuidelinesUpdate(BaseModel):
+    billing_guidelines: str
 
 
 @router.post("/practices/onboard", status_code=201)
@@ -259,6 +264,10 @@ async def onboard_practice(
         for pe in body.payers:
             payers_out.append(await payer_enrollment_service.add_payer_enrollment(
                 db=db, user_id=uid, practice_id=pid, data=pe))
+        if body.billing_guidelines and pid:
+            _pr = (await db.execute(select(Practice).where(Practice.id == pid))).scalar_one_or_none()
+            if _pr is not None:
+                _pr.billing_guidelines = body.billing_guidelines.strip()[:20000]
         await db.commit()
     except ClientManagementError as e:
         await db.rollback()
@@ -266,7 +275,74 @@ async def onboard_practice(
     return {
         "status": "onboarded", "practice_id": str(pid), "practice": practice,
         "providers_added": len(providers_out), "payers_enrolled": len(payers_out),
+        "guidelines_set": bool(body.billing_guidelines),
     }
+
+
+@router.get("/practices/{practice_id}/guidelines")
+async def get_guidelines(
+    practice_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    pr = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    return {"practice_id": str(practice_id), "billing_guidelines": pr.billing_guidelines or ""}
+
+
+@router.put("/practices/{practice_id}/guidelines")
+async def set_guidelines(
+    practice_id: UUID,
+    body: GuidelinesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Set/replace the client's billing guidelines — applied automatically to this
+    practice's coding/billing/AR agent work."""
+    pr = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    pr.billing_guidelines = (body.billing_guidelines or "").strip()[:20000]
+    await db.commit()
+    return {"status": "saved", "practice_id": str(practice_id), "chars": len(pr.billing_guidelines or "")}
+
+
+@router.post("/practices/{practice_id}/client-info")
+async def upload_client_info(
+    practice_id: UUID,
+    file: UploadFile = File(..., description="Client-info workbook (.xlsx) with a Billing Guidelines sheet"),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Parse a client-info workbook and store its Billing Guidelines sheet as the
+    practice's guidelines (auto-applied to the agents)."""
+    pr = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="Empty file.")
+    try:
+        import io as _io  # noqa: PLC0415
+        import openpyxl  # noqa: PLC0415
+        wb = openpyxl.load_workbook(_io.BytesIO(data), data_only=True, read_only=True)
+        lines: list[str] = []
+        for ws in wb.worksheets:
+            if "guideline" in (ws.title or "").lower():
+                for row in ws.iter_rows(values_only=True):
+                    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                    if cells:
+                        lines.append(" ".join(cells))
+        text = "\n".join(lines).strip()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail=f"Could not parse the workbook: {e}")
+    if not text:
+        raise HTTPException(status_code=422, detail="No 'Billing Guidelines' sheet found in the workbook.")
+    pr.billing_guidelines = text[:20000]
+    await db.commit()
+    return {"status": "imported", "practice_id": str(practice_id),
+            "chars": len(pr.billing_guidelines), "preview": text[:400]}
 
 
 @router.get("/practices", response_model=PaginatedResponse[PracticeResponse])

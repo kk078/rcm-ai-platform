@@ -27,6 +27,10 @@ export function OnboardingPage() {
   const [arBusy, setArBusy] = useState(false);
   const [arResult, setArResult] = useState<any>(null);
   const [arError, setArError] = useState('');
+  const [billingGuidelines, setBillingGuidelines] = useState('');
+  // client-info workbook upload (auto-fills billing guidelines)
+  const [ciBusy, setCiBusy] = useState(false);
+  const [ciMsg, setCiMsg] = useState('');
 
   const setP = (k: string, v: string) => setPractice((s) => ({ ...s, [k]: v }));
   const setProv = (i: number, k: string, v: string) =>
@@ -36,19 +40,24 @@ export function OnboardingPage() {
     setError(''); setResult(null);
     if (!practice.practice_name.trim()) { setError('Practice name is required.'); return; }
     if (!/^\d{2}-\d{7}$/.test(practice.tin)) { setError('TIN must be in EIN format XX-XXXXXXX.'); return; }
+    const filled = providers.filter((p) => p.npi.trim() || p.first_name.trim() || p.last_name.trim());
+    if (filled.length === 0) { setError('Add at least one provider with an NPI.'); return; }
+    for (const p of filled) {
+      if (!/^\d{10}$/.test(p.npi.trim())) { setError('Each provider needs a valid 10-digit NPI.'); return; }
+      if (!p.last_name.trim()) { setError('Each provider needs a last name.'); return; }
+    }
     setSubmitting(true);
     try {
-      const cleanProviders = providers
-        .filter((p) => p.npi.trim() && p.last_name.trim())
-        .map((p) => ({
-          npi: p.npi.trim(), first_name: p.first_name.trim(), last_name: p.last_name.trim(),
-          credential: p.credential || null, taxonomy_code: p.taxonomy_code || null,
-          specialty: p.specialty || null,
-        }));
+      const cleanProviders = filled.map((p) => ({
+        npi: p.npi.trim(), first_name: p.first_name.trim(), last_name: p.last_name.trim(),
+        credential: p.credential || null, taxonomy_code: p.taxonomy_code || null,
+        specialty: p.specialty || null,
+      }));
       const body = {
         practice: Object.fromEntries(Object.entries(practice).map(([k, v]) => [k, v === '' ? null : v])),
         providers: cleanProviders,
         payers: [],
+        billing_guidelines: billingGuidelines.trim() || null,
       };
       // practice_name and tin must stay set (not null)
       (body.practice as any).practice_name = practice.practice_name;
@@ -76,6 +85,23 @@ export function OnboardingPage() {
       setArError(e?.response?.data?.detail || 'AR import failed.');
     } finally {
       setArBusy(false);
+    }
+  }
+
+  async function importClientInfo(f: File) {
+    if (!result?.practice_id) return;
+    setCiBusy(true); setCiMsg('');
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const { data } = await api.post(`/clients/practices/${result.practice_id}/client-info`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setCiMsg(`Imported ${data.chars?.toLocaleString()} characters of billing guidelines — now auto-applied to this client's agents.`);
+    } catch (e: any) {
+      setCiMsg(e?.response?.data?.detail || 'Could not read the workbook.');
+    } finally {
+      setCiBusy(false);
     }
   }
 
@@ -124,7 +150,7 @@ export function OnboardingPage() {
             <div className="space-y-3">
               {providers.map((p, i) => (
                 <div key={i} className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-3"><label className={lbl}>NPI</label><input className={input} value={p.npi} onChange={(e) => setProv(i, 'npi', e.target.value)} /></div>
+                  <div className="col-span-3"><label className={lbl}>NPI *</label><input className={input} placeholder="10 digits" value={p.npi} onChange={(e) => setProv(i, 'npi', e.target.value)} /></div>
                   <div className="col-span-2"><label className={lbl}>First</label><input className={input} value={p.first_name} onChange={(e) => setProv(i, 'first_name', e.target.value)} /></div>
                   <div className="col-span-2"><label className={lbl}>Last</label><input className={input} value={p.last_name} onChange={(e) => setProv(i, 'last_name', e.target.value)} /></div>
                   <div className="col-span-2"><label className={lbl}>Cred.</label><input className={input} placeholder="MD" value={p.credential} onChange={(e) => setProv(i, 'credential', e.target.value)} /></div>
@@ -135,7 +161,14 @@ export function OnboardingPage() {
                 </div>
               ))}
             </div>
-            <p className="text-xs text-gray-400 mt-3">Payer enrollments can be added after setup from the practice's Clients page.</p>
+            <p className="text-xs text-gray-400 mt-3">NPI is required for each provider. Payer enrollments can be added after setup from the Clients page.</p>
+          </section>
+
+          {/* Billing guidelines */}
+          <section className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="font-semibold text-gray-900 mb-1">Client billing guidelines</h2>
+            <p className="text-sm text-gray-500 mb-3">Paste this client's billing rules (HEDIS codes, modifiers, POS rules, payer specifics). They are <span className="font-medium">automatically applied to this client's coding &amp; billing agents</span>. You can also upload the client-info workbook after setup.</p>
+            <textarea className={`${input} h-32 font-mono text-xs`} placeholder={'e.g.\nFor Televisit add modifier 95; POS 02\nAlways bill more specific ICD codes\nBill HEDIS codes for Medication, BP, BMI...'} value={billingGuidelines} onChange={(e) => setBillingGuidelines(e.target.value)} />
           </section>
 
           {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3 border border-red-200">{error}</div>}
@@ -180,7 +213,18 @@ export function OnboardingPage() {
             )}
           </section>
 
-          <button onClick={() => { setResult(null); setProviders([emptyProvider()]); setArResult(null); setArFile(null); }} className="text-sm text-blue-600 hover:text-blue-700">Onboard another provider</button>
+          {/* Client-info workbook -> guidelines */}
+          <section className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="font-semibold text-gray-900 mb-1">Apply billing guidelines from workbook (optional)</h2>
+            <p className="text-sm text-gray-500 mb-4">Upload the client-info workbook (.xlsx) — its <span className="font-medium">Billing Guidelines</span> sheet is extracted and auto-applied to this client's agents.</p>
+            <div className="flex items-center gap-3">
+              <input type="file" accept=".xlsx" onChange={(e) => e.target.files?.[0] && importClientInfo(e.target.files[0])} className="text-sm" disabled={ciBusy} />
+              {ciBusy && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+            </div>
+            {ciMsg && <div className="mt-3 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">{ciMsg}</div>}
+          </section>
+
+          <button onClick={() => { setResult(null); setProviders([emptyProvider()]); setArResult(null); setArFile(null); setBillingGuidelines(''); setCiMsg(''); }} className="text-sm text-blue-600 hover:text-blue-700">Onboard another provider</button>
         </div>
       )}
     </div>

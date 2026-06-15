@@ -93,6 +93,7 @@ class Practice(Base, TimestampMixin):
     default_clearinghouse: Mapped[str | None] = mapped_column(String(100))
 
     notes: Mapped[str | None] = mapped_column(Text)
+    billing_guidelines: Mapped[str | None] = mapped_column(Text)  # client-specific rules auto-applied to agents
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID, ForeignKey("users.id", use_alter=True, name="fk_practices_created_by")
     )

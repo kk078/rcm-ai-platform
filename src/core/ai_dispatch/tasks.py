@@ -489,8 +489,22 @@ async def _process_item(task_self, item_id: str) -> dict[str, Any]:
 
         # Build enriched payload while the session is still open.
         item_data = await _build_item_data(db, item)
+        # Client-specific billing guidelines — auto-applied to every item for this practice.
+        instr_parts: list[str] = []
+        try:
+            from src.infrastructure.database.models import Practice as _Practice  # noqa: PLC0415
+            if getattr(item, "practice_id", None):
+                _pr = await db.get(_Practice, item.practice_id)
+                if _pr is not None and (_pr.billing_guidelines or "").strip():
+                    instr_parts.append(
+                        "CLIENT BILLING GUIDELINES (this practice — follow when coding/billing):\n"
+                        + _pr.billing_guidelines.strip()[:6000])
+        except Exception as _g_e:  # noqa: BLE001
+            logger.warning("ai_dispatch: guideline load skipped: %s", _g_e)
         if eff["instructions"]:
-            item_data["agent_instructions"] = eff["instructions"]
+            instr_parts.append(eff["instructions"])
+        if instr_parts:
+            item_data["agent_instructions"] = "\n\n".join(instr_parts)
         # RAG-lite: fold relevant knowledge-base references into the agent's instructions.
         try:
             from src.core.knowledge import service as kb  # noqa: PLC0415
