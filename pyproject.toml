@@ -110,9 +110,9 @@ strict = false
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-# CI ran bare pytest (no cwd on sys.path) and collected integration scripts that do import src.
-# Scope collection to tests/ and put the repo root on the path so rom src... resolves
-# under both pytest and python -m pytest.
+# Bare "pytest" (no cwd on sys.path) was collecting integration scripts that import src.
+# Scope collection to tests/ and add repo root to the path so "from src..." resolves
+# under both "pytest" and "python -m pytest".
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "--tb=short -q"
