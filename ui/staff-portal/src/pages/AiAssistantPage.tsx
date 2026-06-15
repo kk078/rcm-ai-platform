@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import api from '../lib/api';
+import { useAuth } from '../hooks/useAuth';
 
 interface Message {
   id: string;
@@ -110,6 +111,8 @@ export function AiAssistantPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const { user } = useAuth();
+  const isSuper = user?.internal_role === 'company_admin';
   const [mode, setMode] = useState<'chat' | 'command'>('chat');
   const [pendingCmd, setPendingCmd] = useState<{ text: string; label: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -217,8 +220,10 @@ export function AiAssistantPage() {
           <div className="flex rounded-lg border border-gray-200 p-0.5">
             <button onClick={() => setMode('chat')}
               className={`rounded-md px-3 py-1 text-xs font-medium ${mode === 'chat' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>Ask</button>
+            {isSuper && (
             <button onClick={() => setMode('command')}
               className={`rounded-md px-3 py-1 text-xs font-medium ${mode === 'command' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>Direct agents</button>
+            )}
           </div>
           <span className="w-2 h-2 bg-green-400 rounded-full"></span>
           <span className="text-xs text-gray-500">Online</span>

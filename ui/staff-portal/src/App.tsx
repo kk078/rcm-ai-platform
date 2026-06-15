@@ -23,6 +23,8 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { EHRConnectionsPage } from './pages/EHRConnectionsPage';
 import { ErrorIntelligencePage } from './pages/ErrorIntelligencePage';
 import { ProviderUsersPage } from './pages/ProviderUsersPage';
+import { UsersPage } from './pages/UsersPage';
+import { ReferencesPage } from './pages/ReferencesPage';
 import { useAuth } from './hooks/useAuth';
 
 function MustChangeGuard({ children }: { children: React.ReactNode }) {
@@ -70,6 +72,8 @@ export default function App() {
         <Route path="settings"           element={<SettingsPage />} />
         <Route path="ai-assistant"       element={<AiAssistantPage />} />
         <Route path="agent-monitor"      element={<AiAgentsPage />} />
+        <Route path="users"              element={<UsersPage />} />
+        <Route path="references"         element={<ReferencesPage />} />
         <Route path="eligibility"        element={<EligibilityPage />} />
         <Route path="prior-auth"         element={<PriorAuthPage />} />
         <Route path="patient-billing"    element={<PatientBillingPage />} />

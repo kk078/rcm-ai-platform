@@ -5,6 +5,7 @@ import {
   AlertTriangle, Building2, Receipt, Settings, LogOut,
   ChevronLeft, ChevronRight, Sparkles, ShieldCheck, ShieldAlert,
   UserRound, FolderOpen, Plug, Bug, KeyRound, Activity,
+  UsersRound, BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -31,6 +32,8 @@ const mgmtItems: NavItem[] = [
   { to: '/ehr-connections',     label: 'EHR / PMS',          icon: Plug,      adminOnly: true },
   { to: '/agent-monitor',       label: 'AI Agents',          icon: Activity,  adminOnly: true },
   { to: '/error-intelligence',  label: 'Error Intelligence', icon: Bug,       adminOnly: true },
+  { to: '/users',               label: 'User Management',    icon: UsersRound, adminOnly: true },
+  { to: '/references',          label: 'References',          icon: BookOpen,  adminOnly: true },
   { to: '/settings',            label: 'Settings',           icon: Settings },
 ];
 
