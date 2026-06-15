@@ -1524,3 +1524,27 @@ class AgentDirective(Base, TimestampMixin):
     auto_advance: Mapped[bool] = mapped_column(default=False, nullable=False)
     instructions: Mapped[str | None] = mapped_column(Text)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(PG_UUID)
+
+class KnowledgeReference(TimestampMixin, Base):
+    """Reference material (URLs / pasted text) the AI assistant + agents can cite.
+    Retrieval is Postgres full-text search over `content`. Store non-PHI guidance only."""
+    __tablename__ = "knowledge_references"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("practices.id"))  # null = global
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(1000))
+    source_type: Mapped[str] = mapped_column(String(20), default="url")  # url | text
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    tags: Mapped[list | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active | archived
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    added_by_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
+
+    __table_args__ = (
+        Index("ix_knowledge_practice", "practice_id"),
+        Index("ix_knowledge_status", "status"),
+    )

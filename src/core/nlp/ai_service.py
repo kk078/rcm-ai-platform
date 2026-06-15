@@ -580,7 +580,7 @@ Return:
 - HIPAA compliance and healthcare regulations
 - Prior authorization, EOB/ERA interpretation
 
-Be concise, accurate, and actionable. Cite specific guidelines for coding questions."""
+Be concise, accurate, and actionable. Cite specific guidelines for coding questions.\n\nYou have a practice knowledge base of reference material. When the CONTEXT section below includes REFERENCE MATERIAL, use it and cite sources by title/URL. Users can add references by pasting a URL or text in chat -- those are fetched and stored on the server automatically, so acknowledge when you have stored or used a reference and never claim you cannot access URLs or save references."""
         if context:
             system += f"\n\nCONTEXT:\n{context}"
 

@@ -491,6 +491,21 @@ async def _process_item(task_self, item_id: str) -> dict[str, Any]:
         item_data = await _build_item_data(db, item)
         if eff["instructions"]:
             item_data["agent_instructions"] = eff["instructions"]
+        # RAG-lite: fold relevant knowledge-base references into the agent's instructions.
+        try:
+            from src.core.knowledge import service as kb  # noqa: PLC0415
+            kquery = " ".join(
+                str(item_data.get(k, "")) for k in
+                ("clinical_text", "note", "denial_reason", "reason_code",
+                 "cpt_codes", "icd10_codes", "payer_name", "plan_type")
+            ).strip() or item.queue_type
+            krefs = await kb.search_references(db, practice_id=getattr(item, "practice_id", None), query=kquery, limit=2)
+            if krefs:
+                ref_block = kb.build_reference_context(krefs, max_chars_each=600)
+                item_data["agent_instructions"] = (item_data.get("agent_instructions", "") + "\n\n" + ref_block).strip()
+                item_data["reference_titles"] = [r.title for r in krefs]
+        except Exception as _kb_e:
+            logger.warning("ai_dispatch: knowledge retrieval skipped: %s", _kb_e)
 
     # Dispatch OUTSIDE the session so the DB lock is released while the LLM runs.
     async with async_session_factory() as db:

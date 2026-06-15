@@ -80,6 +80,7 @@ class RevenueInsightRequest(BaseModel):
 async def chat(
     body: ChatRequest,
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     RCM AI assistant — answers billing, coding, and compliance questions.
@@ -89,11 +90,12 @@ async def chat(
     ai = get_ai_service()
 
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    chat_context = await _augment_context_with_knowledge(db, current_user.get("practice_id"), current_user.get("user_id"), messages, body.context)
 
     if body.stream:
         async def _event_stream():
             try:
-                gen = await ai.chat(messages=messages, context=body.context, stream=True)
+                gen = await ai.chat(messages=messages, context=chat_context, stream=True)
                 async for chunk in gen:
                     # SSE format
                     yield f"data: {json.dumps({'delta': chunk})}\n\n"
@@ -109,7 +111,7 @@ async def chat(
         )
 
     try:
-        response = await ai.chat(messages=messages, context=body.context, stream=False)
+        response = await ai.chat(messages=messages, context=chat_context, stream=False)
         return ChatResponse(
             message=response.message,
             session_id=response.session_id,
@@ -400,3 +402,41 @@ async def list_agent_directives(
         "confidence_threshold": r.confidence_threshold, "auto_advance": r.auto_advance,
         "instructions": r.instructions, "updated_at": r.updated_at.isoformat() if r.updated_at else None,
     } for r in rows]}
+
+async def _augment_context_with_knowledge(db, practice_id, user_id, messages, base_context):
+    """Ingest any URLs in the latest user message and retrieve relevant references,
+    folding them into the assistant's CONTEXT so answers can cite stored material."""
+    from src.core.knowledge import service as kb
+    latest = ""
+    for m in reversed(messages):
+        if m.get("role") == "user" and m.get("content"):
+            latest = m["content"]
+            break
+    parts = []
+    if base_context:
+        parts.append(base_context)
+    ingested = []
+    for url in kb.extract_urls(latest)[:3]:
+        try:
+            ingested.append(await kb.ingest_url(db, practice_id=practice_id, url=url, added_by_id=user_id))
+        except Exception as e:
+            parts.append(f"NOTE: Could not fetch {url} ({e}). Ask the user to paste the content so it can be stored.")
+    if ingested:
+        try:
+            await db.commit()
+        except Exception:
+            pass
+        titles = "; ".join(f"{r.title} ({r.url})" for r in ingested)
+        parts.append(f"NOTE: You just fetched and stored these references in the knowledge base: {titles}. Acknowledge this to the user and use them below.")
+    try:
+        refs = await kb.search_references(db, practice_id=practice_id, query=latest, limit=4)
+    except Exception:
+        refs = []
+    seen = {r.id for r in refs}
+    for r in ingested:
+        if r.id not in seen:
+            refs.insert(0, r)
+    ctx = kb.build_reference_context(refs)
+    if ctx:
+        parts.append(ctx)
+    return "\n\n".join(p for p in parts if p) or None

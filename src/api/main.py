@@ -45,6 +45,7 @@ from src.api.routes import (
 from src.api.routes.eligibility import router as eligibility_router
 from src.api.routes.prior_auth import router as prior_auth_router
 from src.api.routes.claim_forms import router as claim_forms_router
+from src.api.routes.knowledge import router as knowledge_router
 from src.api.routes.patient_billing import router as patient_billing_router
 from src.api.routes.documents import router as documents_router
 from src.api.routes.notifications import router as notifications_router
@@ -360,6 +361,7 @@ app.include_router(provider_analytics_router, prefix="/api/v1")
 app.include_router(error_intelligence_router, prefix="/api/v1/errors", tags=["Error Intelligence"])
 app.include_router(provider_users_router, prefix="/api/v1/provider-users", tags=["Provider User Management"])
 app.include_router(claim_forms_router, prefix="/api/v1/claim-forms", tags=["Claim Forms"])
+app.include_router(knowledge_router, prefix="/api/v1", tags=["Knowledge Base"])
 
 
 # ── Health & Readiness ───────────────────────────────────────
