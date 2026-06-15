@@ -17,15 +17,18 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short
 
+  # Push-to-deploy on the machine that hosts the Podman stack.
+  # Runs on a SELF-HOSTED runner (outbound-only to GitHub — no inbound SSH/tunnel needed,
+  # which sidesteps the local WSL/Hyper-V networking issue).
+  #
+  # Stays SKIPPED (green) until BOTH are true:
+  #   1. A self-hosted runner is registered:  repo Settings -> Actions -> Runners -> New self-hosted runner
+  #   2. Repo variable DEPLOY_ENABLED = true:  repo Settings -> Secrets and variables -> Actions -> Variables
   deploy:
     needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted]
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: /opt/apps/rcm-ai-platform/scripts/deploy.sh
+      - name: Deploy locally (Podman)
+        shell: pwsh
+        run: D:\rcm-ai-platform\scripts\deploy-local.ps1
