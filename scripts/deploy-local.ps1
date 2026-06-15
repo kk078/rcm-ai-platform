@@ -7,7 +7,8 @@ Write-Host '== Aethera push-to-deploy =='
 Set-Location $Repo
 
 # 1. Pull the just-pushed commit into the live working copy (src/ is bind-mounted into api/celery).
-git pull --ff-only
+#    -c safe.directory avoids git's "dubious ownership" error if the runner account != repo owner.
+git -c safe.directory='D:/rcm-ai-platform' pull --ff-only
 
 # 2. Restart only the containers that actually exist (compose project prefix: rcm-ai-platform-*).
 $running = (podman ps -a --format '{{.Names}}')
