@@ -927,6 +927,85 @@ async def needs_attention(
     return {"total": len(out), "items": out}
 
 
+_AR_BUCKETS = [">120", "91-120", "61-90", "31-60", "0-30"]
+
+
+@router.get("/open-ar")
+async def open_ar(
+    practice_id: UUID | None = None,
+    bucket: str | None = Query(None, description="aging bucket filter"),
+    status: str | None = Query(None, description="pending|in_progress|completed"),
+    include_credits: bool = True,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Imported open AR (external_ar follow-up items): an aging-bucket summary plus a
+    prioritized worklist. RBAC + provider scoped; reuse /queue/{id}/claim and /complete
+    to work an item."""
+    conds = [WorkQueueItem.item_type == "external_ar"]
+    _allowed = allowed_queue_types(current_user)
+    if _allowed is not None and "follow_up" not in (_allowed or []):
+        return {"summary": {"open_ar_total": 0.0, "claim_count": 0,
+                            "buckets": {b: {"count": 0, "balance": 0.0} for b in _AR_BUCKETS}},
+                "items": [], "total": 0, "page": page, "page_size": page_size}
+    if practice_id:
+        conds.append(WorkQueueItem.practice_id == practice_id)
+    if current_user.get("user_type") == "provider" and current_user.get("practice_id"):
+        conds.append(WorkQueueItem.practice_id == current_user["practice_id"])
+
+    rows = (await db.execute(select(WorkQueueItem).where(and_(*conds)))).scalars().all()
+
+    summary = {b: {"count": 0, "balance": 0.0} for b in _AR_BUCKETS}
+    total_ar = 0.0
+    parsed = []
+    for it in rows:
+        m = _parse_notes(it.notes)
+        b = m.get("bucket") if m.get("bucket") in _AR_BUCKETS else "0-30"
+        bal = float(m.get("balance") or 0)
+        is_credit = bool(m.get("is_credit"))
+        if not is_credit:
+            summary[b]["count"] += 1
+            summary[b]["balance"] = round(summary[b]["balance"] + bal, 2)
+            total_ar += bal
+        parsed.append((it, m, b, bal, is_credit))
+
+    def _keep(t):
+        it, m, b, bal, is_credit = t
+        if status and it.status != status:
+            return False
+        if bucket and b != bucket:
+            return False
+        if not include_credits and is_credit:
+            return False
+        return True
+
+    work = [t for t in parsed if _keep(t)]
+    work.sort(key=lambda t: (t[0].priority, t[3]), reverse=True)
+    total = len(work)
+    page_items = work[(page - 1) * page_size: (page - 1) * page_size + page_size]
+    items = [{
+        "id": str(it.id), "status": it.status, "priority": it.priority,
+        "priority_label": priority_label(it.priority),
+        "assigned_to": str(it.assigned_to) if it.assigned_to else None,
+        "claim_no": m.get("claim_no"), "payer": m.get("payer"), "patient": m.get("patient"),
+        "balance": round(bal, 2), "charges": m.get("charges"), "bucket": b,
+        "aging_days": m.get("aging_days"), "service_date": m.get("service_date"),
+        "is_credit": is_credit, "action": m.get("action"),
+        "due_date": it.due_date.isoformat() if it.due_date else None,
+    } for (it, m, b, bal, is_credit) in page_items]
+
+    return {
+        "summary": {
+            "open_ar_total": round(total_ar, 2),
+            "claim_count": sum(v["count"] for v in summary.values()),
+            "buckets": summary,
+        },
+        "items": items, "total": total, "page": page, "page_size": page_size,
+    }
+
+
 class BulkCompleteRequest(BaseModel):
     item_ids: list[UUID]
     note: str | None = None

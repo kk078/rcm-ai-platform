@@ -26,6 +26,7 @@ import { ProviderUsersPage } from './pages/ProviderUsersPage';
 import { UsersPage } from './pages/UsersPage';
 import { ReferencesPage } from './pages/ReferencesPage';
 import { OnboardingPage } from './pages/OnboardingPage';
+import { OpenArPage } from './pages/OpenArPage';
 import { useAuth } from './hooks/useAuth';
 
 function MustChangeGuard({ children }: { children: React.ReactNode }) {
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="denials"            element={<DenialsPage />} />
         <Route path="clients"            element={<ClientsPage />} />
         <Route path="onboarding"         element={<OnboardingPage />} />
+        <Route path="open-ar"            element={<OpenArPage />} />
         <Route path="billing"            element={<BillingPage />} />
         <Route path="settings"           element={<SettingsPage />} />
         <Route path="ai-assistant"       element={<AiAssistantPage />} />

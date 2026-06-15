@@ -5,7 +5,7 @@ import {
   AlertTriangle, Building2, Receipt, Settings, LogOut,
   ChevronLeft, ChevronRight, Sparkles, ShieldCheck, ShieldAlert,
   UserRound, FolderOpen, Plug, Bug, KeyRound, Activity,
-  UsersRound, BookOpen, UserPlus,
+  UsersRound, BookOpen, UserPlus, Wallet,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -18,6 +18,7 @@ const coreItems: NavItem[] = [
   { to: '/coding',          label: 'Coding',          icon: Code2 },
   { to: '/payments',        label: 'Payments',        icon: CreditCard },
   { to: '/denials',         label: 'Denials',         icon: AlertTriangle },
+  { to: '/open-ar',         label: 'Open AR',         icon: Wallet },
   { to: '/eligibility',     label: 'Eligibility',     icon: ShieldCheck },
   { to: '/prior-auth',      label: 'Prior Auth',      icon: ShieldAlert },
   { to: '/patient-billing', label: 'Patient Billing', icon: UserRound },
