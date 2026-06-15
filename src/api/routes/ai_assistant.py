@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.auth.middleware import get_current_user
+from src.core.rbac import require_super_admin, is_super_admin
 from src.infrastructure.database.session import get_db
 
 logger = structlog.get_logger()
@@ -90,7 +91,7 @@ async def chat(
     ai = get_ai_service()
 
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
-    chat_context = await _augment_context_with_knowledge(db, current_user.get("practice_id"), current_user.get("user_id"), messages, body.context)
+    chat_context = await _augment_context_with_knowledge(db, current_user.get("practice_id"), current_user.get("user_id"), messages, body.context, is_super_admin(current_user))
 
     if body.stream:
         async def _event_stream():
@@ -363,7 +364,7 @@ class AgentCommandRequest(BaseModel):
 async def agent_command(
     body: AgentCommandRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     """Interpret a natural-language instruction and apply it to the AI agents
     (enable/pause, confidence threshold, auto-advance, standing instruction, reprocess)."""
@@ -393,7 +394,7 @@ async def agent_command(
 @router.get("/agent-directives")
 async def list_agent_directives(
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
 ):
     from src.infrastructure.database.models import AgentDirective  # noqa: PLC0415
     rows = (await db.execute(_select(AgentDirective))).scalars().all()
@@ -403,7 +404,7 @@ async def list_agent_directives(
         "instructions": r.instructions, "updated_at": r.updated_at.isoformat() if r.updated_at else None,
     } for r in rows]}
 
-async def _augment_context_with_knowledge(db, practice_id, user_id, messages, base_context):
+async def _augment_context_with_knowledge(db, practice_id, user_id, messages, base_context, allow_ingest: bool = False):
     """Ingest any URLs in the latest user message and retrieve relevant references,
     folding them into the assistant's CONTEXT so answers can cite stored material."""
     from src.core.knowledge import service as kb
@@ -416,7 +417,7 @@ async def _augment_context_with_knowledge(db, practice_id, user_id, messages, ba
     if base_context:
         parts.append(base_context)
     ingested = []
-    for url in kb.extract_urls(latest)[:3]:
+    for url in (kb.extract_urls(latest)[:3] if allow_ingest else []):
         try:
             ingested.append(await kb.ingest_url(db, practice_id=practice_id, url=url, added_by_id=user_id))
         except Exception as e:

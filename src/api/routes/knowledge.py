@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.session import get_db
 from src.infrastructure.auth.middleware import get_current_user
+from src.core.rbac import require_super_admin
 from src.core.knowledge import service as kb
 
 logger = structlog.get_logger()
@@ -52,7 +53,7 @@ def _practice(current_user: dict, global_scope: bool) -> uuid.UUID | None:
 @router.post("/", response_model=ReferenceResponse)
 async def add_reference(
     body: AddReferenceRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Add a reference by URL (fetched server-side) or by pasted text."""
@@ -111,7 +112,7 @@ async def get_reference(
 @router.post("/{ref_id}/refresh", response_model=ReferenceResponse)
 async def refresh_reference(
     ref_id: uuid.UUID,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     ref = await kb.get_reference(db, ref_id)
@@ -131,7 +132,7 @@ async def refresh_reference(
 @router.delete("/{ref_id}")
 async def delete_reference(
     ref_id: uuid.UUID,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     ok = await kb.delete_reference(db, ref_id)

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas.common import MessageResponse
 from src.infrastructure.auth.middleware import get_current_user, require_role
+from src.core.rbac import is_super_admin, user_agent_areas
 from src.infrastructure.auth.service import AuthService
 from src.infrastructure.database.session import get_db
 
@@ -41,6 +42,8 @@ class UserOut(BaseModel):
     mfa_enabled: bool
     last_login: Optional[datetime]
     created_at: datetime
+
+    agent_areas: list[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -138,6 +141,7 @@ async def list_users(
             last_name=u.last_name or "",
             full_name=f"{u.first_name or ''} {u.last_name or ''}".strip(),
             internal_role=u.internal_role,
+            agent_areas=sorted(user_agent_areas({"user_type": "internal", "internal_role": u.internal_role})),
             is_active=u.is_active,
             mfa_enabled=u.mfa_enabled,
             last_login=u.last_login,
@@ -265,3 +269,15 @@ async def admin_reset_password(
 
     logger.info("admin_password_reset", target_user_id=str(user_id), by=str(current_user["user_id"]))
     return MessageResponse(message="Password reset successfully.")
+
+
+@router.get("/me")
+async def get_me(current_user: dict = Depends(get_current_user)):
+    """Current user's profile, tier, and agent areas (drives UI feature-gating)."""
+    return {
+        "user_id": current_user.get("user_id"),
+        "user_type": current_user.get("user_type"),
+        "internal_role": current_user.get("internal_role"),
+        "is_super_admin": is_super_admin(current_user),
+        "agent_areas": sorted(user_agent_areas(current_user)),
+    }
