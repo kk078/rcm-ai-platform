@@ -408,7 +408,8 @@ class TestMFA:
         decrypted = encryptor.decrypt(bytes(user.mfa_secret))
         assert len(decrypted) > 0  # Should be a valid base32 secret
 
-    def test_create_mfa_challenge(self, auth_service):
+    @pytest.mark.asyncio
+    async def test_create_mfa_challenge(self, auth_service):
         from src.infrastructure.database.models import User
         user = User(
             id=uuid4(),
@@ -418,7 +419,7 @@ class TestMFA:
             last_name="User",
             user_type="internal",
         )
-        challenge = auth_service.create_mfa_challenge(user)
+        challenge = await auth_service.create_mfa_challenge(user)
         assert challenge.mfa_challenge_id is not None
         assert challenge.message == "MFA verification required"
 

@@ -446,7 +446,7 @@ class TestBuildItemData:
 def _make_async_result(value):
     """Return an AsyncMock that yields a scalar result."""
     r = AsyncMock()
-    r.scalar_one_or_none = AsyncMock(return_value=value)
+    r.scalar_one_or_none = MagicMock(return_value=value)
     r.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
     r.fetchall = MagicMock(return_value=[])
     return r

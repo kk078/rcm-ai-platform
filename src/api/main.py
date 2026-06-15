@@ -416,4 +416,11 @@ async def readiness_check():
         await qclient.close()
         checks["vector_db"] = True
     except Exception as e:
-        l
+        logger.warning("readiness_vector_db_fail", error=str(e))
+        checks["vector_db"] = False  # non-fatal: vector DB optional, AI degrades gracefully
+
+    status_code = 200 if overall else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": "ready" if overall else "not_ready", "checks": checks},
+    )
