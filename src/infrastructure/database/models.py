@@ -1548,3 +1548,31 @@ class KnowledgeReference(TimestampMixin, Base):
         Index("ix_knowledge_practice", "practice_id"),
         Index("ix_knowledge_status", "status"),
     )
+
+class PatientDocument(TimestampMixin, Base):
+    """Intake ledger for uploaded patient documents (eligibility/benefits, progress notes,
+    fee schedules, EHR exports). Captures provenance + dedup + the LLM-extracted structured
+    payload, and links to the operational records it populated (coverage / eligibility check).
+    Contains PHI — practice-scoped, never global."""
+    __tablename__ = "patient_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID, primary_key=True, default=uuid.uuid4)
+    practice_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("practices.id"))
+    doc_type: Mapped[str] = mapped_column(String(40), default="other")  # eligibility_benefits, progress_note, fee_schedule, ehr_export, eob_era, other
+    source_filename: Mapped[str | None] = mapped_column(String(300))
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)    # sha256 of extracted text (dedup)
+    raw_text: Mapped[str | None] = mapped_column(Text)
+    extracted: Mapped[dict | None] = mapped_column(JSONB)               # structured fields the LLM pulled
+    patient_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("patients.id"))
+    payer_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("payers.id"))
+    coverage_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("coverages.id"))
+    eligibility_check_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("eligibility_checks.id"))
+    status: Mapped[str] = mapped_column(String(20), default="processed")  # processed, needs_review, error
+    note: Mapped[str | None] = mapped_column(Text)
+    added_by_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID, ForeignKey("users.id"))
+
+    __table_args__ = (
+        Index("ix_patient_documents_hash", "content_hash"),
+        Index("ix_patient_documents_patient", "patient_id"),
+        Index("ix_patient_documents_type", "doc_type"),
+    )

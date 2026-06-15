@@ -80,30 +80,57 @@ async def add_reference(
     return ref
 
 
-@router.post("/upload", response_model=ReferenceResponse)
+@router.post("/upload")
 async def upload_reference(
     file: UploadFile = File(...),
     global_scope: bool = False,
     current_user: dict = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a document (PDF / DOCX / TXT / MD / CSV) — text is extracted, auto-summarized/tagged, and stored."""
-    practice_id = _practice(current_user, global_scope)
+    """Upload a document. Patient PHI documents (eligibility/benefits, progress notes, fee
+    schedules, EHR exports, EOB/ERA) are routed to the patient-document intake pipeline
+    (operational tables). Everything else is stored as reference material in the knowledge base."""
+    from src.core.document_intake import service as di  # noqa: PLC0415
     data = await file.read()
     if not data:
         raise HTTPException(status_code=422, detail="Empty file.")
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (max 15 MB).")
+    fname = file.filename or "upload"
     try:
-        ref = await kb.ingest_file(db, practice_id=practice_id, filename=file.filename or "upload",
-                                   data=data, added_by_id=current_user.get("user_id"))
+        text = kb.extract_text_from_file(fname, data)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        logger.warning("knowledge_upload_failed", filename=getattr(file, "filename", None), error=str(e))
+        logger.warning("knowledge_upload_extract_failed", filename=fname, error=str(e))
+        raise HTTPException(status_code=502, detail=f"Could not read the file: {e}")
+
+    parsed = await di.classify_and_extract(text)
+    PATIENT_TYPES = {"eligibility_benefits", "progress_note", "fee_schedule", "ehr_export", "eob_era"}
+    try:
+        if parsed.get("doc_type") in PATIENT_TYPES:
+            res = await di.ingest_patient_document(
+                db, practice_id=current_user.get("practice_id"), filename=fname,
+                added_by_id=current_user.get("user_id"), text=text, parsed=parsed)
+            await db.commit()
+            tags = [parsed.get("doc_type")] + (["duplicate"] if res.get("duplicate") else [])
+            summ = res.get("message") or res.get("summary") or ""
+            if res.get("eligibility_check_id"):
+                summ = (summ + " Created an eligibility/benefits record linked to the patient.").strip()
+            return {"kind": "patient_document", "title": fname, "char_count": len(text),
+                    "tags": tags, "summary": summ, **res}
+        ref = await kb.ingest_text(db, practice_id=_practice(current_user, global_scope),
+                                   title=fname, content=text, added_by_id=current_user.get("user_id"))
+        await db.commit()
+        return {"kind": "reference", "title": ref.title, "char_count": ref.char_count,
+                "tags": ref.tags, "summary": ref.summary}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.warning("knowledge_upload_failed", filename=fname, error=str(e))
         raise HTTPException(status_code=502, detail=f"Could not ingest the file: {e}")
-    await db.commit()
-    return ref
 
 @router.get("/", response_model=list[ReferenceResponse])
 async def list_references(
