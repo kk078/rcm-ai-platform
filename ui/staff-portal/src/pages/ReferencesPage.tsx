@@ -10,6 +10,7 @@ interface Reference {
   char_count: number;
   status: string;
   tags: string[] | null;
+  summary: string | null;
   fetched_at: string | null;
   created_at: string | null;
 }
@@ -90,6 +91,14 @@ export function ReferencesPage() {
                   <div className="mt-1 text-xs text-gray-500">
                     {r.source_type} · {r.char_count.toLocaleString()} chars · {r.status}
                   </div>
+                  {r.summary && <p className="mt-1 text-xs text-gray-600">{r.summary}</p>}
+                  {(r.tags || []).length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {(r.tags || []).map((tg) => (
+                        <span key={tg} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">{tg}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-2 text-xs">
                   <button onClick={() => view(r.id)} className="text-blue-600 hover:underline">{openId === r.id ? 'Hide' : 'View'}</button>

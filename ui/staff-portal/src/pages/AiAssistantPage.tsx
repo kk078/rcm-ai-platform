@@ -109,6 +109,8 @@ export function AiAssistantPage() {
     },
   ]);
   const [input, setInput] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { user } = useAuth();
@@ -121,6 +123,23 @@ export function AiAssistantPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const uploadFile = async (f: File) => {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const { data } = await api.post('/knowledge/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const tagStr = data.tags?.length ? `, tags: ${data.tags.join(', ')}` : '';
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Stored "${data.title}" in the knowledge base (${(data.char_count||0).toLocaleString()} chars${tagStr}). I will use it in future answers.`, timestamp: new Date() }]);
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || 'Upload failed.';
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `Upload error: ${msg}`, timestamp: new Date() }]);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
 
   const doSend = async (text: string, confirmCmd = false) => {
     if (!text.trim() || loading) return;
@@ -330,6 +349,17 @@ export function AiAssistantPage() {
             rows={2}
             className="flex-1 resize-none px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm leading-relaxed"
           />
+          {isSuper && (
+            <>
+              <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,.csv,.json" className="hidden"
+                onChange={e => e.target.files?.[0] && uploadFile(e.target.files[0])} />
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                title="Add a document to the knowledge base"
+                className="px-3 py-2.5 border border-gray-300 rounded-xl text-gray-600 hover:bg-gray-50 disabled:opacity-50 flex-shrink-0">
+                {uploading ? 'Uploading' : 'Attach'}
+              </button>
+            </>
+          )}
           <button
             onClick={() => submit(input)}
             disabled={!input.trim() || loading}

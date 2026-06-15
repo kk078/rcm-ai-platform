@@ -133,10 +133,15 @@ async def _store(db, *, practice_id, title, url, source_type, content, added_by_
         await db.flush()
         return existing
 
+    # Auto-structure: LLM summary + controlled topic tags (best-effort).
+    summary, auto_tags = await summarize_and_tag(content)
+    if not tags:
+        tags = auto_tags
+
     ref = KnowledgeReference(
         practice_id=practice_id, title=title, url=url, source_type=source_type,
         content=content, content_hash=chash, char_count=len(content),
-        tags=tags, status="active", fetched_at=now, added_by_id=added_by_id,
+        tags=tags, summary=summary, status="active", fetched_at=now, added_by_id=added_by_id,
     )
     db.add(ref)
     await db.flush()
@@ -216,3 +221,92 @@ async def delete_reference(db, ref_id: uuid.UUID) -> bool:
     ref.status = "archived"
     await db.flush()
     return True
+
+
+# ── Auto-structuring (LLM summary + controlled topic tags) ──────────────────
+CONTROLLED_TAGS = [
+    "coding", "billing", "denials", "prior_auth", "eligibility",
+    "payment_posting", "claim_status", "compliance", "payer_policy",
+    "credentialing", "patient_access", "general",
+]
+
+
+async def summarize_and_tag(content: str) -> tuple[str | None, list[str] | None]:
+    """Use the platform LLM to produce a short summary + controlled topic tags.
+    Best-effort: returns (None, None) if the LLM is unavailable or output is unusable."""
+    text = (content or "")[:6000]
+    if not text.strip():
+        return None, None
+    try:
+        from src.core.nlp.ai_service import get_ai_service  # noqa: PLC0415
+        backend = get_ai_service()._get_backend()
+        system = (
+            "You structure U.S. healthcare RCM reference material. "
+            "Return ONLY JSON: {\"summary\": \"1-2 sentence summary\", \"tags\": [\"...\"]}. "
+            "tags MUST be a subset of: " + ", ".join(CONTROLLED_TAGS) + "."
+        )
+        out, _ = await backend.call(system=system, user_content="Summarize and tag this reference:\n\n" + text,
+                                    use_json=False, max_tokens=300)
+        import json as _json, re as _re  # noqa: PLC0415
+        m = _re.search(r"\{.*\}", out or "", _re.DOTALL)
+        if not m:
+            return None, None
+        data = _json.loads(m.group(0))
+        summary = (str(data.get("summary") or "")).strip() or None
+        tags = [t for t in (data.get("tags") or []) if t in CONTROLLED_TAGS] or None
+        return summary, tags
+    except Exception as e:  # noqa: BLE001
+        logger.warning("knowledge_autostructure_failed", error=str(e))
+        return None, None
+
+
+# ── File ingestion (PDF / DOCX / TXT / MD / CSV; image OCR optional) ─────────
+def extract_text_from_file(filename: str, data: bytes) -> str:
+    """Extract readable text from an uploaded file by extension."""
+    import io  # noqa: PLC0415
+    name = (filename or "").lower()
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+    if ext == "pdf":
+        import pypdf  # noqa: PLC0415
+        reader = pypdf.PdfReader(io.BytesIO(data))
+        return "\n".join((pg.extract_text() or "") for pg in reader.pages).strip()
+    if ext == "docx":
+        import docx  # noqa: PLC0415
+        d = docx.Document(io.BytesIO(data))
+        return "\n".join(par.text for par in d.paragraphs).strip()
+    if ext in ("txt", "md", "csv", "tsv", "json", "text", ""):
+        return data.decode("utf-8", "ignore").strip()
+    if ext in ("png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff"):
+        try:
+            import pytesseract  # noqa: PLC0415
+            from PIL import Image  # noqa: PLC0415
+            return pytesseract.image_to_string(Image.open(io.BytesIO(data))).strip()
+        except Exception:
+            raise ValueError(
+                "Image OCR is not configured on the server. Upload a PDF/DOCX/TXT, "
+                "or paste the text directly."
+            )
+    try:
+        return data.decode("utf-8").strip()
+    except Exception:
+        raise ValueError(f"Unsupported file type: .{ext}")
+
+
+async def ingest_file(
+    db: AsyncSession,
+    *,
+    practice_id: uuid.UUID | None,
+    filename: str,
+    data: bytes,
+    added_by_id: uuid.UUID | None = None,
+    tags: list | None = None,
+    title: str | None = None,
+) -> KnowledgeReference:
+    """Extract text from an uploaded document and store it as a reference."""
+    text = extract_text_from_file(filename, data)
+    if not text:
+        raise ValueError("No extractable text found in the file.")
+    return await _store(
+        db, practice_id=practice_id, title=(title or filename or "Uploaded document")[:300],
+        url=None, source_type="file", content=text[:MAX_CONTENT_CHARS], added_by_id=added_by_id, tags=tags,
+    )

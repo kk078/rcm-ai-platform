@@ -48,3 +48,6 @@ faker>=30.0.0
 ruff>=0.8.0
 mypy>=1.13.0
 pre-commit>=4.0.0
+
+pypdf>=6.0
+python-docx>=1.1

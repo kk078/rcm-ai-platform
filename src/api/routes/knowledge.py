@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +39,7 @@ class ReferenceResponse(BaseModel):
     char_count: int
     status: str
     tags: list[str] | None = None
+    summary: str | None = None
     fetched_at: Any = None
     created_at: Any = None
 
@@ -78,6 +79,31 @@ async def add_reference(
     await db.commit()
     return ref
 
+
+@router.post("/upload", response_model=ReferenceResponse)
+async def upload_reference(
+    file: UploadFile = File(...),
+    global_scope: bool = False,
+    current_user: dict = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a document (PDF / DOCX / TXT / MD / CSV) — text is extracted, auto-summarized/tagged, and stored."""
+    practice_id = _practice(current_user, global_scope)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="Empty file.")
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 15 MB).")
+    try:
+        ref = await kb.ingest_file(db, practice_id=practice_id, filename=file.filename or "upload",
+                                   data=data, added_by_id=current_user.get("user_id"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.warning("knowledge_upload_failed", filename=getattr(file, "filename", None), error=str(e))
+        raise HTTPException(status_code=502, detail=f"Could not ingest the file: {e}")
+    await db.commit()
+    return ref
 
 @router.get("/", response_model=list[ReferenceResponse])
 async def list_references(

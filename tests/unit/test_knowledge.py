@@ -61,3 +61,25 @@ class TestBuildReferenceContext:
         refs = [SimpleNamespace(title="Long", url=None, content="x" * 5000)]
         ctx = build_reference_context(refs, max_chars_each=100)
         assert ctx.count("x") <= 100
+
+
+class TestExtractFile:
+    def test_txt(self):
+        from src.core.knowledge.service import extract_text_from_file
+        assert extract_text_from_file("a.txt", b"Hello HMO PPO") == "Hello HMO PPO"
+
+    def test_csv(self):
+        from src.core.knowledge.service import extract_text_from_file
+        assert "code,desc" in extract_text_from_file("x.csv", b"code,desc\n99213,office")
+
+    def test_image_without_ocr_raises(self):
+        import pytest
+        from src.core.knowledge.service import extract_text_from_file
+        with pytest.raises(ValueError):
+            extract_text_from_file("scan.png", b"\x89PNG not really")
+
+    def test_unknown_binary_raises(self):
+        import pytest
+        from src.core.knowledge.service import extract_text_from_file
+        with pytest.raises(ValueError):
+            extract_text_from_file("x.bin", b"\xff\xfe\x00\x01")
