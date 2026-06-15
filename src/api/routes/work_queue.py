@@ -1009,6 +1009,26 @@ async def open_ar(
     }
 
 
+@router.post("/open-ar/triage")
+async def triage_open_ar_now(
+    practice_id: UUID | None = None,
+    limit: int = Query(10, ge=1, le=25),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """On-demand: run AI AR triage immediately for up to `limit` un-triaged items
+    (the 10-minute beat handles the rest of the backlog)."""
+    _allowed = allowed_queue_types(current_user)
+    if _allowed is not None and "follow_up" not in (_allowed or []):
+        raise HTTPException(status_code=403, detail="Not authorized for AR follow-up.")
+    if current_user.get("user_type") == "provider" and current_user.get("practice_id"):
+        practice_id = current_user["practice_id"]
+    from src.core.ar_intake.triage import triage_pending  # noqa: PLC0415
+    res = await triage_pending(db, limit=limit, practice_id=practice_id)
+    await db.commit()
+    return res
+
+
 class BulkCompleteRequest(BaseModel):
     item_ids: list[UUID]
     note: str | None = None

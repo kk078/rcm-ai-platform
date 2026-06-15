@@ -5,7 +5,7 @@ Internal staff only (provider portal users cannot access this).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from uuid import UUID
 from datetime import date, datetime, timezone
@@ -118,6 +118,21 @@ class ProviderAdd(BaseModel):
     credential: str | None = None  # MD, DO, NP, PA
     taxonomy_code: str | None = None
     specialty: str | None = None
+
+    @field_validator("taxonomy_code")
+    @classmethod
+    def _clean_taxonomy(cls, v):
+        """Accept 'code' or 'code - description' and keep only the code (column is 20 chars)."""
+        if not v:
+            return v
+        import re  # noqa: PLC0415
+        m = re.match(r"[A-Za-z0-9]+", v.strip())
+        return (m.group(0) if m else v.strip())[:20]
+
+    @field_validator("credential")
+    @classmethod
+    def _clean_credential(cls, v):
+        return v.strip()[:20] if v else v
 
 
 class PayerEnrollmentCreate(BaseModel):

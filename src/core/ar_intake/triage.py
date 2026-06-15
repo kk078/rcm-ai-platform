@@ -70,13 +70,15 @@ async def recommend_action(ar: dict) -> dict:
         return {}
 
 
-async def triage_pending(db: AsyncSession, limit: int = 100) -> dict:
-    """Triage up to `limit` un-triaged pending external_ar items. Merges the rec into notes."""
+async def triage_pending(db: AsyncSession, limit: int = 100, practice_id=None) -> dict:
+    """Triage up to `limit` un-triaged pending external_ar items. Merges the rec into notes.
+    Optionally scoped to one practice (used by the on-demand 'Triage now' action)."""
+    conds = [WorkQueueItem.item_type == "external_ar", WorkQueueItem.status == "pending"]
+    if practice_id is not None:
+        conds.append(WorkQueueItem.practice_id == practice_id)
     rows = (await db.execute(
-        select(WorkQueueItem).where(
-            WorkQueueItem.item_type == "external_ar",
-            WorkQueueItem.status == "pending",
-        ).order_by(WorkQueueItem.priority.desc()).limit(limit * 3)
+        select(WorkQueueItem).where(*conds)
+        .order_by(WorkQueueItem.priority.desc()).limit(limit * 3)
     )).scalars().all()
 
     triaged = 0

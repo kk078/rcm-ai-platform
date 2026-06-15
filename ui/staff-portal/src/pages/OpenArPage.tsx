@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Wallet, Loader2, CheckCircle2, Hand } from 'lucide-react';
+import { Wallet, Loader2, CheckCircle2, Hand, Sparkles } from 'lucide-react';
 import api from '../lib/api';
 
 const BUCKETS = ['>120', '91-120', '61-90', '31-60', '0-30'];
@@ -45,19 +45,30 @@ export function OpenArPage() {
     mutationFn: (id: string) => api.post(`/queues/queue/${id}/complete`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['open-ar'] }),
   });
+  const triageNow = useMutation({
+    mutationFn: () => api.post('/queues/open-ar/triage', null, { params: { limit: 25 } }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['open-ar'] }),
+  });
 
   const s = data?.summary;
   const items = data?.items ?? [];
 
   return (
     <div>
-      <div className="mb-6 flex items-center gap-3">
-        <Wallet className="w-6 h-6 text-blue-600" />
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Open AR</h1>
-          <p className="text-sm text-gray-500">Outstanding claims imported from the provider's aging file — work the oldest, highest-value first.</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Wallet className="w-6 h-6 text-blue-600" />
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Open AR</h1>
+            <p className="text-sm text-gray-500">Outstanding claims imported from the provider's aging file — work the oldest, highest-value first.</p>
+          </div>
         </div>
+        <button onClick={() => triageNow.mutate()} disabled={triageNow.isPending}
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl px-4 py-2 text-sm font-medium flex items-center gap-2">
+          {triageNow.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Triage now
+        </button>
       </div>
+      {triageNow.isSuccess && <div className="mb-3 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2">AI triaged {(triageNow.data as any)?.triaged ?? 0} claim(s). Recommendations updated below.</div>}
 
       {/* Summary */}
       <div className="grid grid-cols-6 gap-3 mb-5">

@@ -128,7 +128,7 @@ export function OnboardingPage() {
                   <div className="col-span-2"><label className={lbl}>First</label><input className={input} value={p.first_name} onChange={(e) => setProv(i, 'first_name', e.target.value)} /></div>
                   <div className="col-span-2"><label className={lbl}>Last</label><input className={input} value={p.last_name} onChange={(e) => setProv(i, 'last_name', e.target.value)} /></div>
                   <div className="col-span-2"><label className={lbl}>Cred.</label><input className={input} placeholder="MD" value={p.credential} onChange={(e) => setProv(i, 'credential', e.target.value)} /></div>
-                  <div className="col-span-2"><label className={lbl}>Taxonomy</label><input className={input} value={p.taxonomy_code} onChange={(e) => setProv(i, 'taxonomy_code', e.target.value)} /></div>
+                  <div className="col-span-2"><label className={lbl}>Taxonomy</label><input className={input} placeholder="207R00000X" value={p.taxonomy_code} onChange={(e) => setProv(i, 'taxonomy_code', e.target.value)} /></div>
                   <div className="col-span-1 flex justify-center pb-1">
                     {providers.length > 1 && <button onClick={() => setProviders((r) => r.filter((_, idx) => idx !== i))} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>}
                   </div>
