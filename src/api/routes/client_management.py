@@ -217,6 +217,43 @@ async def create_practice(
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
+class OnboardRequest(BaseModel):
+    practice: PracticeCreate
+    providers: list[ProviderAdd] = Field(default_factory=list)
+    payers: list[PayerEnrollmentCreate] = Field(default_factory=list)
+
+
+@router.post("/practices/onboard", status_code=201)
+async def onboard_practice(
+    body: OnboardRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """One-stop provider setup: create the practice plus its providers and payer
+    enrollments in a single call. Each sub-step reuses the same service logic as the
+    individual endpoints, so this is just a convenience wrapper — the single place to
+    stand a provider up before sending charges."""
+    uid = current_user["user_id"]
+    providers_out, payers_out = [], []
+    try:
+        practice = await practice_service.create_practice(db=db, user_id=uid, data=body.practice)
+        pid = getattr(practice, "id", None) or (practice.get("id") if isinstance(practice, dict) else None)
+        for p in body.providers:
+            providers_out.append(await provider_service.add_provider_to_practice(
+                db=db, user_id=uid, practice_id=pid, data=p))
+        for pe in body.payers:
+            payers_out.append(await payer_enrollment_service.add_payer_enrollment(
+                db=db, user_id=uid, practice_id=pid, data=pe))
+        await db.commit()
+    except ClientManagementError as e:
+        await db.rollback()
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    return {
+        "status": "onboarded", "practice_id": str(pid), "practice": practice,
+        "providers_added": len(providers_out), "payers_enrolled": len(payers_out),
+    }
+
+
 @router.get("/practices", response_model=PaginatedResponse[PracticeResponse])
 async def list_practices(
     status: PracticeStatus | None = None,

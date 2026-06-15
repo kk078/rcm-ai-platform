@@ -5,7 +5,7 @@ import {
   AlertTriangle, Building2, Receipt, Settings, LogOut,
   ChevronLeft, ChevronRight, Sparkles, ShieldCheck, ShieldAlert,
   UserRound, FolderOpen, Plug, Bug, KeyRound, Activity,
-  UsersRound, BookOpen,
+  UsersRound, BookOpen, UserPlus,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -27,6 +27,7 @@ const coreItems: NavItem[] = [
 
 const mgmtItems: NavItem[] = [
   { to: '/clients',             label: 'Clients',            icon: Building2 },
+  { to: '/onboarding',          label: 'Onboard Provider',   icon: UserPlus },
   { to: '/billing',             label: 'Billing',            icon: Receipt },
   { to: '/provider-logins',     label: 'Provider Logins',    icon: KeyRound,  adminOnly: true },
   { to: '/ehr-connections',     label: 'EHR / PMS',          icon: Plug,      adminOnly: true },
