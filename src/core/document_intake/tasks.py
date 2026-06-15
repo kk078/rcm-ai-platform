@@ -25,7 +25,9 @@ def _run(coro):
 
 
 async def _ingest(data: bytes, filename: str, practice_id, added_by_id, global_scope: bool) -> dict:
-    from src.infrastructure.database.session import async_session  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession  # noqa: PLC0415
+    from sqlalchemy.pool import NullPool  # noqa: PLC0415
+    from src.config import get_settings  # noqa: PLC0415
     from src.core.knowledge import service as kb  # noqa: PLC0415
     from src.core.document_intake import service as di  # noqa: PLC0415
 
@@ -36,19 +38,29 @@ async def _ingest(data: bytes, filename: str, practice_id, added_by_id, global_s
     if not text:
         raise ValueError("No text could be extracted from the document.")
     parsed = await di.classify_and_extract(text)
-    async with async_session() as db:
-        if parsed.get("doc_type") in PATIENT_TYPES:
-            res = await di.ingest_patient_document(
-                db, practice_id=pid, filename=filename,
-                added_by_id=aid, text=text, parsed=parsed)
-            res["kind"] = "patient_document"
-        else:
-            ref = await kb.ingest_text(
-                db, practice_id=(None if global_scope else pid),
-                title=filename, content=text, added_by_id=aid)
-            res = {"kind": "reference", "title": ref.title,
-                   "char_count": ref.char_count, "tags": ref.tags, "summary": ref.summary}
-        await db.commit()
+
+    # Task-local engine (NullPool) created INSIDE this asyncio.run() loop. Sharing the
+    # module-level engine's pooled asyncpg connections across Celery's per-task event
+    # loops raises "Future attached to a different loop"; a fresh NullPool engine that
+    # we dispose at the end keeps every connection within this one loop.
+    engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with Session() as db:
+            if parsed.get("doc_type") in PATIENT_TYPES:
+                res = await di.ingest_patient_document(
+                    db, practice_id=pid, filename=filename,
+                    added_by_id=aid, text=text, parsed=parsed)
+                res["kind"] = "patient_document"
+            else:
+                ref = await kb.ingest_text(
+                    db, practice_id=(None if global_scope else pid),
+                    title=filename, content=text, added_by_id=aid)
+                res = {"kind": "reference", "title": ref.title,
+                       "char_count": ref.char_count, "tags": ref.tags, "summary": ref.summary}
+            await db.commit()
+    finally:
+        await engine.dispose()
     logger.info("document_ingested_async", filename=filename, kind=res.get("kind"),
                 duplicate=res.get("duplicate"))
     return res

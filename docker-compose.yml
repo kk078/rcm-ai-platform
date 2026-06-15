@@ -168,6 +168,8 @@ services:
       celery -A src.infrastructure.queue.celery_app worker
       -l info -Q coding,billing,payments,denials,edi,celery,ai_dispatch
       --concurrency=4
+    volumes:
+      - ./src:/app/src   # hot-read code on deploy (git pull + restart); matches api so new tasks ship without an image rebuild
     healthcheck:
       # Override the image's inherited HTTP (:8000) healthcheck — meaningless for a worker.
       test: ["CMD-SHELL", "celery -A src.infrastructure.queue.celery_app inspect ping -t 10 || exit 1"]
@@ -191,6 +193,8 @@ services:
       postgres:
         condition: service_healthy
     command: celery -A src.infrastructure.queue.celery_app beat -l info
+    volumes:
+      - ./src:/app/src   # hot-read code on deploy (git pull + restart); matches api
     healthcheck:
       disable: true   # beat has no HTTP/inspect endpoint; inherited :8000 check is invalid
     networks:
