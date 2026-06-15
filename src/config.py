@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     redis_cache_db: int = 1
     redis_celery_db: int = 2
     redis_mfa_db: int = 3
+    redis_mfa_url: str = "redis://redis:6379/3"
 
     # Celery
     celery_broker_url: str = "redis://redis:6379/2"

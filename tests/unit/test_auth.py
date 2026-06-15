@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+from unittest.mock import AsyncMock
 
 # Set test encryption key before importing anything that uses it
 os.environ.setdefault("PHI_ENCRYPTION_KEY", "test-encryption-key-for-testing-only-32b")
@@ -419,6 +420,7 @@ class TestMFA:
             last_name="User",
             user_type="internal",
         )
+        auth_service._redis = AsyncMock()
         challenge = await auth_service.create_mfa_challenge(user)
         assert challenge.mfa_challenge_id is not None
         assert challenge.message == "MFA verification required"
