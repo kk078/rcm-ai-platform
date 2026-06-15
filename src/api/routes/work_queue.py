@@ -23,6 +23,7 @@ from src.infrastructure.database.models import (
     Patient,
 )
 from src.infrastructure.auth.middleware import get_current_user
+from src.core.rbac import allowed_queue_types
 
 router = APIRouter()
 
@@ -388,6 +389,11 @@ async def get_my_queue(
 
     if queue_type:
         conditions.append(WorkQueueItem.queue_type == queue_type.value)
+
+    # Per-area scoping: non-super-admins only see queues for their assigned agent areas.
+    _allowed = allowed_queue_types(current_user)
+    if _allowed is not None:
+        conditions.append(WorkQueueItem.queue_type.in_(_allowed or ["__none__"]))
     if practice_id:
         conditions.append(WorkQueueItem.practice_id == practice_id)
     if status:

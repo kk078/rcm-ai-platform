@@ -73,6 +73,34 @@ def can_access_area(user: dict, area: str, assignment_roles: list[str] | None = 
     return is_super_admin(user) or area in user_agent_areas(user, assignment_roles)
 
 
+# Map WorkQueueItem.queue_type (stored strings + variants) -> agent areas.
+QUEUE_TYPE_AREAS: dict[str, set[str]] = {
+    "intake": {"patient_intake", "eligibility"},
+    "patient_intake": {"patient_intake"},
+    "coding": {"coding"},
+    "charge_capture": {"charge_capture"},
+    "billing": {"billing"},
+    "posting": {"payment_posting"},
+    "denial": {"denials"},
+    "follow_up": {"denials", "claim_status"},
+    "claim_status": {"claim_status"},
+    "prior_auth": {"prior_auth"},
+    "authorization": {"prior_auth"},
+    "eligibility": {"eligibility"},
+    "verification": {"eligibility"},
+    "credentialing": {"credentialing"},
+}
+
+
+def allowed_queue_types(user: dict, assignment_roles: list[str] | None = None) -> set[str] | None:
+    """Queue-type strings a user may see. Returns None for super admins (no restriction);
+    otherwise the queue types whose area is in the user's agent areas (possibly empty)."""
+    if is_super_admin(user):
+        return None
+    areas = user_agent_areas(user, assignment_roles)
+    return {qt for qt, qareas in QUEUE_TYPE_AREAS.items() if qareas & areas}
+
+
 def require_super_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """FastAPI dependency — 403 unless the caller is a super admin (company_admin)."""
     if not is_super_admin(current_user):

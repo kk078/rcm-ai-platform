@@ -4,6 +4,7 @@ from src.core.rbac import (
     is_super_admin,
     user_agent_areas,
     can_access_area,
+    allowed_queue_types,
 )
 
 
@@ -50,3 +51,19 @@ class TestCanAccessArea:
     def test_specialist_only_own_area(self):
         assert can_access_area(_user("coder"), "coding") is True
         assert can_access_area(_user("coder"), "denials") is False
+
+
+class TestAllowedQueueTypes:
+    def test_super_admin_unrestricted(self):
+        assert allowed_queue_types(_user("company_admin")) is None
+
+    def test_coder_only_coding_queues(self):
+        assert allowed_queue_types(_user("coder")) == {"coding", "charge_capture"}
+
+    def test_ar_specialist_denial_queues(self):
+        q = allowed_queue_types(_user("ar_specialist"))
+        assert {"denial", "follow_up", "billing"}.issubset(q)
+        assert "coding" not in q
+
+    def test_viewer_sees_nothing(self):
+        assert allowed_queue_types(_user("viewer")) == set()
