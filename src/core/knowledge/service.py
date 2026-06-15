@@ -261,6 +261,39 @@ async def summarize_and_tag(content: str) -> tuple[str | None, list[str] | None]
 
 
 # ── File ingestion (PDF / DOCX / TXT / MD / CSV; image OCR optional) ─────────
+def _is_readable(text: str) -> bool:
+    """True if extracted text looks like real prose (not empty / glyph-code garbage)."""
+    if not text or len(text.strip()) < 20:
+        return False
+    return len(re.findall(r"[A-Za-z]{3,}", text)) >= 20
+
+
+def _ocr_image(data: bytes) -> str:
+    import io  # noqa: PLC0415
+    try:
+        import pytesseract  # noqa: PLC0415
+        from PIL import Image  # noqa: PLC0415
+        txt = pytesseract.image_to_string(Image.open(io.BytesIO(data))).strip()
+    except Exception as e:  # noqa: BLE001  (bad image, or tesseract binary missing)
+        raise ValueError(f"Could not OCR the image: {e}")
+    if not txt:
+        raise ValueError("No text could be read from the image via OCR.")
+    return txt
+
+
+def _ocr_pdf(data: bytes) -> str:
+    try:
+        import pytesseract  # noqa: PLC0415
+        from pdf2image import convert_from_bytes  # noqa: PLC0415
+        pages = convert_from_bytes(data, dpi=200)
+        txt = "\n".join(pytesseract.image_to_string(img) for img in pages).strip()
+    except Exception as e:  # noqa: BLE001  (tesseract/poppler missing, or render error)
+        raise ValueError(f"Could not OCR the PDF: {e}")
+    if not txt:
+        raise ValueError("No text could be extracted from the document, even with OCR.")
+    return txt
+
+
 def extract_text_from_file(filename: str, data: bytes) -> str:
     """Extract readable text from an uploaded file by extension."""
     import io  # noqa: PLC0415
@@ -269,7 +302,11 @@ def extract_text_from_file(filename: str, data: bytes) -> str:
     if ext == "pdf":
         import pypdf  # noqa: PLC0415
         reader = pypdf.PdfReader(io.BytesIO(data))
-        return "\n".join((pg.extract_text() or "") for pg in reader.pages).strip()
+        text = "\n".join((pg.extract_text() or "") for pg in reader.pages).strip()
+        if _is_readable(text):
+            return text
+        # Empty or glyph-code garbage (scanned, or custom subsetted fonts) -> OCR the pages.
+        return _ocr_pdf(data)
     if ext == "docx":
         import docx  # noqa: PLC0415
         d = docx.Document(io.BytesIO(data))
@@ -277,15 +314,7 @@ def extract_text_from_file(filename: str, data: bytes) -> str:
     if ext in ("txt", "md", "csv", "tsv", "json", "text", ""):
         return data.decode("utf-8", "ignore").strip()
     if ext in ("png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff"):
-        try:
-            import pytesseract  # noqa: PLC0415
-            from PIL import Image  # noqa: PLC0415
-            return pytesseract.image_to_string(Image.open(io.BytesIO(data))).strip()
-        except Exception:
-            raise ValueError(
-                "Image OCR is not configured on the server. Upload a PDF/DOCX/TXT, "
-                "or paste the text directly."
-            )
+        return _ocr_image(data)
     try:
         return data.decode("utf-8").strip()
     except Exception:
