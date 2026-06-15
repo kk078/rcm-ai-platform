@@ -128,13 +128,65 @@ async def _run_clearinghouse_check(
     service_date: date | None,
     checked_by_id: uuid.UUID | None,
 ) -> EligibilityCheck:
-    """Placeholder for real 270/271 clearinghouse API call."""
-    # TODO: Implement Change Healthcare / Availity 270/271 API when key provided
-    logger.warning("clearinghouse_eligibility_not_configured_using_fallback")
-    return await _run_coverage_based_check(
-        db, practice_id, patient_id, coverage, charge_batch_id, service_date, checked_by_id
-    )
+    """Real-time 270/271 via the configured CAQH CORE clearinghouse (CMS HETS for Medicare).
+    Falls back to coverage-on-file when the clearinghouse is unconfigured or errors."""
+    from src.config import settings
+    from src.core.eligibility.clearinghouse import is_configured, check_eligibility_271
+    from src.core.eligibility.plan_types import normalize_plan_type
+    from src.infrastructure.database.models import Practice
 
+    if coverage is None or not is_configured(settings):
+        return await _run_coverage_based_check(
+            db, practice_id, patient_id, coverage, charge_batch_id, service_date, checked_by_id
+        )
+
+    patient = (await db.execute(select(Patient).where(Patient.id == patient_id))).scalar_one_or_none()
+    payer = (await db.execute(select(Payer).where(Payer.id == coverage.payer_id))).scalar_one_or_none()
+    practice = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
+
+    parsed = await check_eligibility_271(
+        settings,
+        payer_name=getattr(payer, "payer_name", "") or "",
+        payer_id=getattr(payer, "payer_id", "") or getattr(payer, "edi_payer_id", "") or "",
+        provider_last_or_org=getattr(practice, "name", "") or "",
+        provider_npi=getattr(practice, "group_npi", "") or "",
+        subscriber_first=getattr(patient, "first_name", "") or "",
+        subscriber_last=getattr(patient, "last_name", "") or "",
+        member_id=getattr(coverage, "member_id", "") or "",
+        subscriber_dob=getattr(patient, "date_of_birth", None),
+        service_date=service_date,
+    )
+    if not parsed or parsed.get("error") or parsed.get("status") in (None, "unknown", "error"):
+        logger.warning("clearinghouse_eligibility_fallback", error=(parsed or {}).get("error"))
+        return await _run_coverage_based_check(
+            db, practice_id, patient_id, coverage, charge_batch_id, service_date, checked_by_id
+        )
+
+    check = EligibilityCheck(
+        practice_id=practice_id,
+        patient_id=patient_id,
+        coverage_id=coverage.id,
+        charge_batch_id=charge_batch_id,
+        payer_id=coverage.payer_id,
+        status=parsed["status"],
+        is_active=parsed["is_active"],
+        check_date=datetime.utcnow(),
+        service_date=service_date or date.today(),
+        plan_name=parsed.get("plan_name") or getattr(coverage, "plan_name", None),
+        plan_type=parsed.get("plan_type") or normalize_plan_type(getattr(coverage, "plan_type", None)),
+        group_number=getattr(coverage, "group_number", None),
+        network_status=parsed.get("network_status") or "unknown",
+        deductible_total=parsed.get("deductible_total"),
+        oop_total=parsed.get("oop_total"),
+        copay=parsed.get("copay"),
+        coinsurance_pct=parsed.get("coinsurance_pct"),
+        checked_by_id=checked_by_id,
+        raw_response={"source": "clearinghouse_271", "payload_id": parsed.get("payload_id"), "x271": parsed.get("_271")},
+    )
+    db.add(check)
+    await db.flush()
+    logger.info("eligibility_271_complete", patient_id=str(patient_id), status=parsed["status"], plan_type=parsed.get("plan_type"))
+    return check
 
 async def get_latest_eligibility(
     db: AsyncSession,

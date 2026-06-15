@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     redis_mfa_db: int = 3
     redis_mfa_url: str = "redis://redis:6379/3"
 
+    # Clearinghouse (real-time 270/271 eligibility). Unset -> coverage-on-file fallback.
+    # For Medicare use CMS HETS (SOAP/MIME, requires a Trading Partner Agreement + Submitter ID).
+    clearinghouse_url: str | None = None
+    clearinghouse_api_key: str | None = None
+    clearinghouse_sender_id: str = "AETHERA"
+    clearinghouse_receiver_id: str = "CMS"
+    clearinghouse_timeout_secs: int = 30
+
     # Celery
     celery_broker_url: str = "redis://redis:6379/2"
     celery_result_backend: str = "redis://redis:6379/2"

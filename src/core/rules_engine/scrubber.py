@@ -7,6 +7,7 @@ import structlog
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+from src.core.eligibility.plan_rules import evaluate_plan_type_rules
 
 logger = structlog.get_logger()
 
@@ -98,6 +99,9 @@ class ClaimScrubber:
 
         # Pass 4: Place of Service / Type of Service consistency
         result.findings.extend(self._check_pos_consistency(claim))
+
+        # Pass 5: Plan-type business rules (referral / out-of-network / delegated billing)
+        result.findings.extend(self._check_plan_type_rules(claim))
 
         # Pass 5: Diagnosis pointer validation
         result.findings.extend(self._check_diagnosis_pointers(claim))
@@ -234,6 +238,41 @@ class ClaimScrubber:
 
         return findings
 
+    def _check_plan_type_rules(self, claim: dict) -> list[ScrubFinding]:
+        """Plan-type business rules (referral, out-of-network, delegated billing).
+        Reads optional plan context from the claim dict; no-ops if plan_type is absent."""
+        plan_type = claim.get("plan_type")
+        if not plan_type:
+            cov = claim.get("coverage")
+            if isinstance(cov, dict):
+                plan_type = cov.get("plan_type")
+        if not plan_type:
+            return []
+        pos = claim.get("place_of_service")
+        for ln in (claim.get("claim_lines") or []):
+            if isinstance(ln, dict) and ln.get("place_of_service"):
+                pos = str(ln["place_of_service"])
+                break
+        raw = evaluate_plan_type_rules(
+            plan_type=plan_type,
+            network_status=claim.get("network_status"),
+            referral_on_file=claim.get("referral_on_file"),
+            is_specialist=claim.get("is_specialist"),
+            place_of_service=pos,
+            is_emergency=claim.get("is_emergency"),
+        )
+        sev = {"error": RuleSeverity.ERROR, "warning": RuleSeverity.WARNING, "info": RuleSeverity.INFO}
+        rtype = {"PLAN_REFERRAL_REQUIRED": RuleType.AUTHORIZATION}
+        return [
+            ScrubFinding(
+                rule_type=rtype.get(f.code, RuleType.ELIGIBILITY),
+                severity=sev.get(f.severity, RuleSeverity.INFO),
+                message=f.message,
+                suggestion=f.suggestion,
+                rule_reference="HealthCare.gov plan-type rules",
+            )
+            for f in raw
+        ]
     def _check_pos_consistency(self, claim: dict) -> list[ScrubFinding]:
         """
         Check Place of Service consistency with procedure codes.
