@@ -1,23 +1,16 @@
 /** @type {import('tailwindcss').Config} */
+const _aethera = {
+  50: '#e6edf6', 100: '#c8d8ed', 200: '#91b1db', 300: '#5a8ac9', 400: '#2b62b6',
+  500: '#0050a0', 600: '#003087', 700: '#002568', 800: '#001a4a', 900: '#000f2c', 950: '#00071a',
+};
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        aethera: {
-          50:  '#e6edf6',
-          100: '#c8d8ed',
-          200: '#91b1db',
-          300: '#5a8ac9',
-          400: '#2b62b6',
-          500: '#0050a0',
-          600: '#003087',   /* Aethera brand blue — active states */
-          700: '#002568',
-          800: '#001a4a',
-          900: '#000f2c',
-          950: '#00071a',
-        },
+        aethera: _aethera,
+        brand: _aethera,   /* alias so legacy brand-* classes resolve to the Aethera palette */
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
