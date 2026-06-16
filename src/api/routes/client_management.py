@@ -10,7 +10,7 @@ from typing import Optional
 from uuid import UUID
 from datetime import date, datetime, timezone
 from enum import Enum
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.session import get_db
@@ -94,6 +94,27 @@ class PracticeCreate(BaseModel):
     contact_email: str | None = None
     intake_method: IntakeMethod = IntakeMethod.PORTAL
     timezone: str = "America/New_York"
+
+
+class PracticeUpdate(BaseModel):
+    """Partial update — only the fields provided are changed (TIN/guidelines edited elsewhere)."""
+    practice_name: str | None = None
+    legal_name: str | None = None
+    group_npi: str | None = Field(None, pattern=r"^\d{10}$")
+    specialty_primary: str | None = None
+    address_line_1: str | None = None
+    city: str | None = None
+    state: str | None = Field(None, max_length=2)
+    zip_code: str | None = None
+    phone: str | None = None
+    fax: str | None = None
+    email: str | None = None
+    contact_name: str | None = None
+    contact_phone: str | None = None
+    contact_email: str | None = None
+    intake_method: IntakeMethod | None = None
+    timezone: str | None = None
+    notes: str | None = None
 
 
 class PracticeResponse(BaseModel):
@@ -437,11 +458,11 @@ async def get_practice(
 @router.patch("/practices/{practice_id}")
 async def update_practice(
     practice_id: UUID,
-    updates: PracticeCreate,
+    updates: PracticeUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_super_admin),
 ):
-    """Update practice configuration."""
+    """Update practice configuration (only the provided fields change)."""
     try:
         result = await practice_service.update_practice(
             db=db,
@@ -452,6 +473,55 @@ async def update_practice(
         return result
     except ClientManagementError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+
+# Tables that represent real billing/clinical data — if any exist, the client is
+# DEACTIVATED (records preserved) rather than permanently deleted.
+_DATA_TABLES = (
+    "claims", "charge_entries", "patients", "encounters", "work_queue_items",
+    "denials", "payment_batches", "coverages", "eligibility_checks",
+    "patient_documents", "prior_authorizations",
+)
+# Config/relationship tables cleared when permanently deleting an EMPTY practice.
+_CONFIG_TABLES = (
+    "users", "payer_enrollments", "practice_locations", "staff_assignments",
+    "service_agreements", "ehr_connections", "ehr_sync_log", "portal_messages",
+    "portal_notifications", "notification_rules", "notification_log",
+    "client_invoices", "document_attachments", "knowledge_references",
+    "staff_productivity", "coding_sessions", "charge_batches",
+)
+
+
+@router.delete("/practices/{practice_id}")
+async def delete_practice(
+    practice_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_super_admin),
+):
+    """Delete a client. A practice with billing/clinical records is DEACTIVATED
+    (terminated; history preserved for compliance). An empty practice is permanently
+    removed along with its config rows and provider logins."""
+    pr = (await db.execute(select(Practice).where(Practice.id == practice_id))).scalar_one_or_none()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    total = 0
+    for t in _DATA_TABLES:
+        total += (await db.execute(
+            text(f"SELECT count(*) FROM {t} WHERE practice_id = :p"), {"p": str(practice_id)}
+        )).scalar() or 0
+    if total > 0:
+        pr.status = "terminated"
+        pr.terminated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        await db.commit()
+        return {"status": "deactivated", "practice_id": str(practice_id), "records": total,
+                "message": f"Practice has {total} billing/clinical record(s); deactivated to preserve history "
+                           "(not permanently deleted)."}
+    for t in _CONFIG_TABLES:
+        await db.execute(text(f"DELETE FROM {t} WHERE practice_id = :p"), {"p": str(practice_id)})
+    await db.execute(text("DELETE FROM practices WHERE id = :p"), {"p": str(practice_id)})
+    await db.commit()
+    return {"status": "deleted", "practice_id": str(practice_id),
+            "message": "Practice permanently deleted (no billing data)."}
 
 
 @router.post("/practices/{practice_id}/activate")
