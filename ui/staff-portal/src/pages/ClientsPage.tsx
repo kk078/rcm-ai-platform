@@ -70,7 +70,7 @@ export function ClientsPage() {
     }
   }
 
-  const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500';
+  const inp = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-aethera-500';
   const lbl = 'block text-xs font-medium text-gray-600 mb-1';
 
   return (
@@ -86,7 +86,7 @@ export function ClientsPage() {
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input type="text" placeholder="Search clients..." value={search} onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 text-sm focus:border-aethera-500 focus:outline-none focus:ring-1 focus:ring-aethera-500" />
         </div>
       </div>
 
@@ -98,14 +98,14 @@ export function ClientsPage() {
             <div key={practice.id} className="rounded-xl border border-gray-200 bg-white p-5 hover:shadow-sm transition-shadow">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-brand-50 flex items-center justify-center"><Building2 className="h-5 w-5 text-brand-600" /></div>
+                  <div className="h-10 w-10 rounded-lg bg-aethera-50 flex items-center justify-center"><Building2 className="h-5 w-5 text-aethera-600" /></div>
                   <div>
                     <h3 className="font-medium text-gray-900">{practice.practice_name}</h3>
                     <p className="text-xs text-gray-500">{practice.specialty_primary || 'N/A'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => openEdit(practice)} title="Edit" className="text-gray-400 hover:text-brand-600 p-1"><Pencil className="h-4 w-4" /></button>
+                  <button onClick={() => openEdit(practice)} title="Edit" className="text-gray-400 hover:text-aethera-600 p-1"><Pencil className="h-4 w-4" /></button>
                   <button onClick={() => confirmDelete(practice)} title="Delete" className="text-gray-400 hover:text-red-500 p-1"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
@@ -150,7 +150,7 @@ export function ClientsPage() {
             {updateMut.isError && <div className="mt-3 text-sm text-red-600">{(updateMut.error as any)?.response?.data?.detail || 'Update failed.'}</div>}
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => { setEditing(null); setForm(null); }} className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100">Cancel</button>
-              <button onClick={() => updateMut.mutate()} disabled={updateMut.isPending} className="rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 px-4 py-2 text-sm font-medium text-white flex items-center gap-2">
+              <button onClick={() => updateMut.mutate()} disabled={updateMut.isPending} className="rounded-lg bg-aethera-600 hover:bg-aethera-700 disabled:bg-aethera-300 px-4 py-2 text-sm font-medium text-white flex items-center gap-2">
                 {updateMut.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Save changes
               </button>
             </div>
